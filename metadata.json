@@ -1,6 +1,6 @@
 {
-  "name": "楽園週報",
-  "description": "15人規模のチーム向けポジティブな週報共有掲示板。KPT形式で学びを共有し、チームを楽園のようにポジティブに。",
+  "name": "週次報告",
+  "description": "15人規模のチーム向けポジティブな週次報告共有掲示板。KPT形式で学びを共有し、チームをさらにポジティブに。",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

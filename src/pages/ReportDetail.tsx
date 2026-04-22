@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
+import { auth, db } from '../lib/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle } from 'lucide-react';
+import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2 } from 'lucide-react';
 
 const REACTIONS = [
   { type: 'like', icon: ThumbsUp, label: 'いいね！', color: 'text-blue-500', bg: 'bg-blue-50' },
@@ -16,28 +18,58 @@ const REACTIONS = [
 export const ReportDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { reports } = useReportStore();
-  const { user } = useAuthStore();
+  const { reports, addComment, getComments, markAsRead, init } = useReportStore();
+  const { user: authUser } = useAuthStore();
   const report = reports.find(r => r.id === id);
 
+  const user = authUser || (typeof window !== 'undefined' ? (window as any).currentUser : null); 
+
   const [comment, setComment] = useState('');
-  const [comments, setComments] = useState([
-    { id: 'c1', authorName: '田中 エリアマネージャー', authorRole: 'AM', text: '素晴らしい改善ですね！マニュアルの共有もお願いしたいです。', createdAt: '2026-04-19T10:00:00Z' },
-    { id: 'c2', authorName: '斎藤 店長', authorRole: '店長', text: 'これ、真似させていただきます！', createdAt: '2026-04-19T11:30:00Z' }
-  ]);
+  const [comments, setComments] = useState<any[]>([]); 
 
-  // BMはマスター権限を持つ
+  useEffect(() => {
+    if (report && user?.uid) {
+      markAsRead(report.id, user.uid);
+      const unsubscribe = getComments(report.id, (cmts) => setComments(cmts));
+      return () => unsubscribe();
+    }
+  }, [report, user?.uid, getComments, markAsRead]);
+
   const isMaster = user?.role === 'BM';
+  const isOwner = user?.uid === report?.authorId;
 
-  if (!report) return <div className="text-center py-20 text-white">レポートが見つかりません</div>;
+  if (!report) return <div className="text-center py-20 text-white font-bold">レポートが見つからないか、削除されました。</div>;
 
-  const handleSendComment = () => {
-    if (!comment.trim()) return;
-    setComments(prev => [
-      ...prev,
-      { id: Date.now().toString(), authorName: '佐藤 拓海', authorRole: '店長', text: comment, createdAt: new Date().toISOString() }
-    ]);
+  const handleSendComment = async () => {
+    const currentUser = user || auth.currentUser;
+    if (!comment.trim()) { alert("コメントを入力してください"); return; }
+    if (!currentUser) { alert("ユーザー情報が取得できていません。再ログインしてください。"); return; }
+    
+    await addComment(report.id, {
+      authorId: currentUser.uid || currentUser.id,
+      authorName: currentUser.name || '名無し',
+      authorRole: currentUser.role || '店長',
+      authorPhotoURL: currentUser.photoURL || '',
+      text: comment
+    });
     setComment('');
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm('本当にこのレポートを削除しますか？\n（この操作は取り消せません）')) {
+      try {
+        await useReportStore.getState().deleteReport(report.id);
+        alert('レポートを削除しました。');
+        navigate('/');
+      } catch (err) {
+        console.error(err);
+        alert('削除に失敗しましたが、権限の問題の可能性があります。 (' + err + ')');
+      }
+    }
+  };
+
+  const handleEdit = () => {
+    navigate(`/edit/${report.id}`);
   };
 
   return (
@@ -52,8 +84,12 @@ export const ReportDetail = () => {
       {/* 本文カード */}
       <GlassCard hoverEffect={false} className="space-y-10 shadow-3xl">
         <div className="flex items-center gap-5 border-b border-white/20 pb-6">
-          <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-paradise-blue to-paradise-pink flex items-center justify-center text-3xl shadow-xl border-2 border-white/50">
-            {report.authorRole === '店長' ? '🏠' : '👔'}
+          <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-paradise-blue to-paradise-pink flex items-center justify-center text-3xl shadow-xl border-2 border-white/50 overflow-hidden">
+            {report.authorPhotoURL ? (
+              <img src={report.authorPhotoURL} alt={report.authorName} className="w-full h-full object-cover" />
+            ) : (
+              report.authorRole === '店長' ? '🏠' : '👔'
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -62,10 +98,10 @@ export const ReportDetail = () => {
             </div>
             <p className="text-sm font-bold text-gray-400 mt-1">{report.storeName} • 第{report.weekNumber}週</p>
           </div>
-          {isMaster && (
+          {(isMaster || isOwner) && (
             <div className="ml-auto flex gap-2">
-              <button className="text-xs font-bold bg-white/50 text-gray-600 px-3 py-1.5 rounded-full hover:bg-white/80 transition-colors">編集</button>
-              <button className="text-xs font-bold bg-red-100 text-red-600 px-3 py-1.5 rounded-full hover:bg-red-200 transition-colors">削除</button>
+              <button onClick={handleEdit} className="text-xs font-bold bg-white/50 text-gray-600 px-3 py-1.5 rounded-full hover:bg-white/80 transition-colors flex items-center gap-1"><Edit size={12}/> 編集</button>
+              <button onClick={handleDelete} className="text-xs font-bold bg-red-100 text-red-600 px-3 py-1.5 rounded-full hover:bg-red-200 transition-colors flex items-center gap-1"><Trash2 size={12}/> 削除</button>
             </div>
           )}
         </div>
@@ -116,7 +152,19 @@ export const ReportDetail = () => {
         {/* リアクションバー */}
         <div className="flex justify-around py-6 border-t border-white/20">
           {REACTIONS.map((r) => (
-            <button key={r.label} className="flex flex-col items-center gap-2 group outline-none">
+            <button 
+              key={r.label} 
+              className="flex flex-col items-center gap-2 group outline-none"
+              onClick={() => {
+                if (user) {
+                   useReportStore.getState().addReaction(report.id, r.type, {
+                       uid: user.uid,
+                       name: user.name,
+                       role: user.role
+                   });
+                }
+              }}
+            >
               <motion.div 
                 whileHover={{ scale: 1.2, rotate: 10 }}
                 whileTap={{ scale: 0.9 }}
@@ -124,7 +172,14 @@ export const ReportDetail = () => {
               >
                 <r.icon size={26} />
               </motion.div>
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{r.label}</span>
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex flex-col items-center">
+                <span>{r.label} ({report.reactions?.find(react => react.type === r.type)?.count || 0})</span>
+                {report.reactions?.find(react => react.type === r.type)?.userNames && (
+                   <span className="text-[8px] text-gray-400 normal-case mt-0.5 line-clamp-1 max-w-[80px]">
+                     {report.reactions?.find(react => react.type === r.type)?.userNames?.join(', ')}
+                   </span>
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -146,8 +201,12 @@ export const ReportDetail = () => {
               transition={{ delay: idx * 0.1 }}
               className="flex gap-4"
             >
-              <div className="w-10 h-10 rounded-2xl bg-white/30 flex-shrink-0 flex items-center justify-center text-lg border border-white/30 shadow-sm">
-                {c.authorRole === 'AM' ? '🎩' : '👤'}
+              <div className="w-10 h-10 rounded-2xl bg-white/30 flex-shrink-0 flex items-center justify-center text-lg border border-white/30 shadow-sm overflow-hidden">
+                {c.authorPhotoURL ? (
+                  <img src={c.authorPhotoURL} alt={c.authorName} className="w-full h-full object-cover" />
+                ) : (
+                  c.authorRole === 'AM' ? '🎩' : '👤'
+                )}
               </div>
               <div className="glass rounded-3xl p-5 flex-1 relative">
                  {/* 吹き出しのしっぽ */}
@@ -160,7 +219,35 @@ export const ReportDetail = () => {
                   </span>
                   <span className="text-[9px] text-gray-400 ml-auto">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <p className="text-sm text-gray-700 leading-relaxed font-medium">{c.text}</p>
+                <p className="text-sm text-gray-700 leading-relaxed font-medium mb-3">{c.text}</p>
+                
+                <div className="flex justify-end border-t border-white/20 pt-2">
+                  <button 
+                    onClick={() => {
+                        if (user) {
+                           useReportStore.getState().addCommentReaction(report.id, c.id, 'like', {
+                             uid: user.uid,
+                             name: user.name
+                           });
+                        }
+                    }}
+                    className={`flex flex-col items-end gap-1 group`}
+                  >
+                    <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full transition-colors ${
+                      c.reactions?.some((r: any) => r.type === 'like' && r.userIds.includes(user?.uid)) 
+                        ? 'bg-blue-100 text-blue-600' 
+                        : 'bg-white/50 text-gray-500 hover:bg-white/80'
+                    }`}>
+                      <ThumbsUp size={12} />
+                      <span>{c.reactions?.find((r: any) => r.type === 'like')?.userIds.length || 0}</span>
+                    </div>
+                    {c.reactions?.find((r: any) => r.type === 'like')?.userNames && (
+                      <span className="text-[8px] text-gray-400 line-clamp-1 max-w-[150px]">
+                        {c.reactions?.find((r: any) => r.type === 'like')?.userNames?.join(', ')}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
@@ -175,11 +262,11 @@ export const ReportDetail = () => {
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendComment()}
-                placeholder="楽園にポジティブな言葉を届けよう..." 
+                placeholder="チームにポジティブな言葉を届けよう..." 
                 className="w-full bg-white/60 border-2 border-white/30 rounded-full px-8 py-4 outline-none focus:ring-4 focus:ring-paradise-sunset/20 focus:border-paradise-sunset/50 transition-all text-sm font-bold text-gray-700 shadow-inner placeholder:text-gray-300"
               />
               <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-20 pointer-events-none group-focus-within:opacity-0 transition-opacity">
-                 <span className="text-[10px] font-black uppercase text-gray-400">楽園の響き</span>
+                 <span className="text-[10px] font-black uppercase text-gray-400">チームの響き</span>
               </div>
             </div>
             <motion.button 

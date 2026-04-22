@@ -14,30 +14,37 @@ service cloud.firestore {
     }
 
     // --- Users Collection ---
+    match /users {
+      allow list: if isAdmin();
+    }
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow update: if isSignedIn() && request.auth.uid == userId && 
-                    request.resource.data.role == resource.data.role; // Cannot change own role
+      allow list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId || // 一時的に本人のロール変更を許可（BMへの昇格用）
+        isAdmin() 
+      );
       
-      // Allow user creation by themselves (initial profile setup)
-      allow create: if isSignedIn() && request.auth.uid == userId &&
-                    request.resource.data.role in ['店長', 'AM'];
+      // Allow user creation by themselves (initial profile setup) or by Admin
+      allow create: if isSignedIn() && (
+          (request.auth.uid == userId && request.resource.data.role in ['店長', 'AM', 'BM']) ||
+          isAdmin()
+      );
+
+      match /notifications/{notificationId} {
+        allow get, list, update, delete: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn(); // Any authenticated user can create a notification for another user
+      }
     }
 
     // --- Reports Collection ---
     match /reports/{reportId} {
-      allow list: if isSignedIn() && (
-        getRole() == 'BM' || 
-        (getRole() == 'AM' && resource.data.authorRole in ['AM', 'BM']) ||
-        getRole() == '店長'
-      );
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isVerified() && request.resource.data.authorId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        isAdmin() || 
-        (request.auth.uid == resource.data.authorId)
-      );
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read, write: if isSignedIn();
+      }
     }
   }
 }

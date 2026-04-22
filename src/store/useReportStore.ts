@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { db } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export interface Reaction {
   type: string;
   count: number;
   userIds: string[];
+  userNames?: string[];
 }
 
 export interface Report {
@@ -11,6 +14,7 @@ export interface Report {
   authorId: string;
   authorName: string;
   authorRole: '店長' | 'AM' | 'BM';
+  authorPhotoURL?: string;
   storeName: string;
   weekNumber: number;
   year: number;
@@ -23,6 +27,24 @@ export interface Report {
   try_why: string;
   reactions: Reaction[];
   commentCount: number;
+  readBy?: string[];
+  createdAt: any;
+}
+
+export interface CommentReaction {
+  type: string;
+  userIds: string[];
+  userNames?: string[];
+}
+
+export interface Comment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: '店長' | 'AM' | 'BM';
+  authorPhotoURL?: string;
+  text: string;
+  reactions?: CommentReaction[];
   createdAt: string;
 }
 
@@ -30,70 +52,254 @@ interface ReportState {
   reports: Report[];
   filterRole: string | null;
   setFilterRole: (role: string | null) => void;
-  addReport: (report: Omit<Report, 'id' | 'reactions' | 'commentCount' | 'createdAt'>) => void;
+  addReport: (report: Omit<Report, 'id' | 'reactions' | 'commentCount' | 'createdAt'>) => Promise<void>;
+  updateReport: (reportId: string, updates: Partial<Report>) => Promise<void>;
+  deleteReport: (reportId: string) => Promise<void>;
+  addComment: (reportId: string, comment: Omit<Comment, 'id' | 'createdAt'>) => Promise<void>;
+  getComments: (reportId: string, callback: (comments: Comment[]) => void) => () => void;
+  addReaction: (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => Promise<void>;
+  addCommentReaction: (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => Promise<void>;
+  markAsRead: (reportId: string, userId: string) => Promise<void>;
+  init: () => void;
 }
 
-const MOCK_REPORTS: Report[] = [
-  {
-    id: '1',
-    authorId: 'u1',
-    authorName: '佐藤 拓海',
-    authorRole: '店長',
-    storeName: '渋谷パームツリー店',
-    weekNumber: 15,
-    year: 2026,
-    keep: '朝の挨拶をハイタッチに変えたところ、チームの活気が20%向上しました！',
-    problem_gap: 'ランチピーク時の提供スピードが目標より3分遅い。',
-    problem_ideal: '全員が連携し、5分以内に全メニューを提供できている状態。',
-    try_who: 'キッチンスタッフ全員',
-    try_when: '来週のランチタイム',
-    try_what: '事前準備（プレップ）のチェックリスト導入',
-    try_why: '準備不足によるボトルネックを解消するため',
-    reactions: [
-      { type: 'like', count: 5, userIds: ['u2'] },
-      { type: 'learn', count: 3, userIds: ['u3'] }
-    ],
-    commentCount: 2,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    authorId: 'u2',
-    authorName: '田中 美咲',
-    authorRole: 'AM',
-    storeName: '東京エリア',
-    weekNumber: 15,
-    year: 2026,
-    keep: '新人のOJTフローを動画マニュアル化したことで、教える側の負担が大幅に減りました。',
-    problem_gap: '店舗間での成功事例の共有が月1回の会議のみで、スピード感に欠ける。',
-    problem_ideal: '日々、全店長が他店の成功事例を自店に即時取り入れられる環境。',
-    try_who: '全店長・AM',
-    try_when: '今週から毎日',
-    try_what: 'Paradise Reportsでの積極的な発信とリアクション',
-    try_why: '情報の民主化とポジティブな文化醸成のため',
-    reactions: [
-      { type: 'great', count: 8, userIds: ['u1', 'u3'] },
-      { type: 'copy', count: 4, userIds: ['u4'] }
-    ],
-    commentCount: 5,
-    createdAt: new Date().toISOString(),
-  }
-];
-
 export const useReportStore = create<ReportState>((set) => ({
-  reports: MOCK_REPORTS,
+  reports: [],
   filterRole: null,
   setFilterRole: (role) => set({ filterRole: role }),
-  addReport: (reportData) => set((state) => ({
-    reports: [
-      {
-        ...reportData,
-        id: Math.random().toString(36).substr(2, 9),
+  addReport: async (report) => {
+    try {
+      await addDoc(collection(db, 'reports'), {
+        ...report,
         reactions: [],
         commentCount: 0,
-        createdAt: new Date().toISOString(),
-      },
-      ...state.reports,
-    ]
-  })),
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to add report', error);
+      throw error;
+    }
+  },
+  updateReport: async (reportId, updates) => {
+    try {
+      await updateDoc(doc(db, 'reports', reportId), updates);
+    } catch (error) {
+      console.error('Failed to update report', error);
+      throw error;
+    }
+  },
+  deleteReport: async (reportId) => {
+    try {
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'reports', reportId));
+    } catch (error) {
+      console.error('Failed to delete report', error);
+      throw error;
+    }
+  },
+  addComment: async (reportId, comment) => {
+    try {
+      const dbCommentsRef = collection(db, 'reports', reportId, 'comments');
+      await addDoc(dbCommentsRef, {
+        ...comment,
+        createdAt: new Date().toISOString()
+      });
+      // Increment comment count
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (reportDoc.exists()) {
+        const data = reportDoc.data() as Report;
+        const currentCount = data.commentCount || 0;
+        await updateDoc(reportRef, { commentCount: currentCount + 1 });
+        
+        // Add Notification
+        if (data.authorId !== comment.authorId) {
+          const { auth: authObj } = await import('../lib/firebase');
+          await addDoc(collection(db, 'users', data.authorId, 'notifications'), {
+            type: 'comment',
+            fromUserId: comment.authorId,
+            fromUserName: comment.authorName,
+            reportId: reportId,
+            message: `${comment.authorName || '誰か'}さんがコメントしました`,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Comment error:', e);
+      alert('コメントの投稿に失敗しました');
+    }
+  },
+  getComments: (reportId, callback) => {
+    const q = query(collection(db, 'reports', reportId, 'comments'), orderBy('createdAt', 'asc'));
+    return onSnapshot(q, (snapshot) => {
+      const cmts = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Comment[];
+      callback(cmts);
+    });
+  },
+  addReaction: async (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => {
+    try {
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (!reportDoc.exists()) throw new Error('Report not found');
+
+      const report = reportDoc.data() as Report;
+      const reactions = [...(report.reactions || [])];
+      const existingReactionIndex = reactions.findIndex(r => r.type === reactionType);
+
+      let wasAdded = false;
+      const userId = user.uid;
+      
+      if (existingReactionIndex > -1) {
+        const userIds = [...reactions[existingReactionIndex].userIds];
+        const userNames = [...(reactions[existingReactionIndex].userNames || [])];
+        const userIndex = userIds.indexOf(userId);
+        
+        if (userIndex > -1) {
+          // Remove reaction (toggle off)
+          userIds.splice(userIndex, 1);
+          if (userNames[userIndex]) userNames.splice(userIndex, 1);
+          reactions[existingReactionIndex] = {
+            ...reactions[existingReactionIndex],
+            userIds,
+            userNames,
+            count: Math.max(0, reactions[existingReactionIndex].count - 1)
+          };
+          // Remove the reaction type if count is 0
+          if (reactions[existingReactionIndex].count === 0) {
+            reactions.splice(existingReactionIndex, 1);
+          }
+        } else {
+          // Add reaction
+          userIds.push(userId);
+          userNames.push(user.name || '匿名');
+          reactions[existingReactionIndex] = {
+            ...reactions[existingReactionIndex],
+            userIds,
+            userNames,
+            count: reactions[existingReactionIndex].count + 1
+          };
+          wasAdded = true;
+        }
+      } else {
+        reactions.push({ type: reactionType, count: 1, userIds: [userId], userNames: [user.name || '匿名'] });
+        wasAdded = true;
+      }
+
+      await updateDoc(reportRef, { reactions });
+      
+      if (wasAdded && report.authorId !== userId) {
+        await addDoc(collection(db, 'users', report.authorId, 'notifications'), {
+           type: 'reaction',
+           fromUserId: userId,
+           fromUserName: user.name || '誰か',
+           reportId: reportId,
+           message: `${user.name || '誰か'}さんがリアクションしました`,
+           isRead: false,
+           createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error: any) {
+      console.error('Reaction error:', error);
+      if (error.code === 'permission-denied') {
+        alert('データを更新する権限がありません。管理者にお問い合わせください。');
+      } else {
+        alert('エラーが発生しました: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+      throw error;
+    }
+  },
+  addCommentReaction: async (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => {
+    try {
+      const commentRef = doc(db, 'reports', reportId, 'comments', commentId);
+      const commentDoc = await getDoc(commentRef);
+      if (!commentDoc.exists()) throw new Error('Comment not found');
+
+      const comment = commentDoc.data() as Comment;
+      const reactions = [...(comment.reactions || [])];
+      const existingReactionIndex = reactions.findIndex(r => r.type === reactionType);
+
+      let wasAdded = false;
+      const userId = user.uid;
+      
+      if (existingReactionIndex > -1) {
+        const userIds = [...reactions[existingReactionIndex].userIds];
+        const userNames = [...(reactions[existingReactionIndex].userNames || [])];
+        const userIndex = userIds.indexOf(userId);
+
+        if (userIndex > -1) {
+          // Toggle off
+          userIds.splice(userIndex, 1);
+          if (userNames[userIndex]) userNames.splice(userIndex, 1);
+          reactions[existingReactionIndex] = { ...reactions[existingReactionIndex], userIds, userNames };
+        } else {
+          userIds.push(userId);
+          userNames.push(user.name || '匿名');
+          reactions[existingReactionIndex] = { ...reactions[existingReactionIndex], userIds, userNames };
+          wasAdded = true;
+        }
+      } else {
+        reactions.push({ type: reactionType, userIds: [userId], userNames: [user.name || '匿名'] });
+        wasAdded = true;
+      }
+
+      await updateDoc(commentRef, { reactions });
+      
+      if (wasAdded && comment.authorId !== userId) {
+        await addDoc(collection(db, 'users', comment.authorId, 'notifications'), {
+           type: 'reaction',
+           fromUserId: userId,
+           fromUserName: user.name || '誰か',
+           reportId: reportId,
+           message: `${user.name || '誰か'}さんがあなたのコメントにいいねしました`,
+           isRead: false,
+           createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error: any) {
+      console.error('Comment reaction error:', error);
+      if (error.code === 'permission-denied') {
+        alert('コメントに反応する権限がありません。');
+      } else {
+        alert('エラーが発生しました: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+      throw error;
+    }
+  },
+  markAsRead: async (reportId, userId) => {
+    try {
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (!reportDoc.exists()) return;
+
+      const data = reportDoc.data() as Report;
+      const readBy = [...(data.readBy || [])];
+      
+      if (!readBy.includes(userId)) {
+        readBy.push(userId);
+        await updateDoc(reportRef, { readBy });
+      }
+    } catch (error) {
+      console.error('Failed to mark as read', error);
+    }
+  },
+  init: () => {
+    const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const reports = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Report[];
+      set({ reports });
+    }, (error) => {
+      console.error('Reports listener error:', error);
+      if (error.code === 'permission-denied') {
+        alert('レポート一覧の読み込み権限がありません。ログインし直してください。');
+      }
+    });
+  },
 }));

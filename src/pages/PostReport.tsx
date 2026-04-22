@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ChevronRight, ChevronLeft, Send, Sparkles, Check, Info } from 'lucide-react';
@@ -10,11 +12,12 @@ const STEPS = [
   { id: 'info', title: '【#店長週間報告】', desc: '*毎週日曜日18:00まで', fields: ['storeName', 'authorName'] },
   { id: 'keep', title: '⭕ Keep（続けること）', desc: '今週「おっ、いい感じだな」と思った小さな成功や工夫は何ですか？', fields: ['keep'] },
   { id: 'problem', title: '🔺 Problem（問題）', desc: '今週「あれ？」と気になった出来事（GAP）は何ですか？ ※「本来どうあるべきだったか」もセットで書いてください', fields: ['problem_gap', 'problem_ideal'] },
-  { id: 'try', title: '🏃 Try（来週の実験）', desc: 'そのGAPを埋めるために、来週はどんな行動をしてみますか？ ※失敗してもOK！「誰が・いつ・どうする」だけ具体的に決めてみましょう', fields: ['try_who', 'try_when', 'try_what', 'try_why'] },
+  { id: 'try', title: '🏃 Try（来週の実験）', desc: 'そのGAPを埋めるために、来週はどんな行動をしてみますか？ ※失敗してもOK！「誰が・いつ・どうする」だけ具体的に決めてみましょう', fields: ['try_who', 'try_when', 'try_what'] },
   { id: 'confirm', title: '最終確認', desc: '最後に見直しましょう', fields: [] },
 ];
 
 export const PostReport = () => {
+  const { id } = useParams();
   const [step, setStep] = useState(0);
   const { user } = useAuthStore();
   const [formData, setFormData] = useState<any>({
@@ -28,25 +31,57 @@ export const PostReport = () => {
     try_what: '',
     try_why: ''
   });
+  const [isEditMode, setIsEditMode] = useState(false);
   const navigate = useNavigate();
-  const { addReport } = useReportStore();
+  const { addReport, updateReport } = useReportStore();
 
-  const handleNext = () => {
+  useEffect(() => {
+    if (id) {
+      setIsEditMode(true);
+      const fetchReport = async () => {
+        const reportDoc = await getDoc(doc(db, 'reports', id));
+        if (reportDoc.exists()) {
+          setFormData(reportDoc.data());
+        } else {
+          alert('レポートが見つかりません');
+          navigate('/');
+        }
+      };
+      fetchReport();
+    }
+  }, [id, navigate]);
+
+  const handleNext = async () => {
     if (step < STEPS.length - 1) {
       setStep(step + 1);
     } else {
-      // 投稿処理
-      if (user) {
-        addReport({
-          authorId: 'u1',
-          authorName: formData.authorName,
-          authorRole: user.role,
-          storeName: formData.storeName,
-          weekNumber: 15,
-          year: 2026,
-          ...formData
-        });
-        navigate('/');
+      const currentUser = auth.currentUser;
+      
+      if (currentUser) {
+        try {
+          if (isEditMode && id) {
+            await updateReport(id, formData);
+            alert('レポートを更新しました');
+            navigate(`/report/${id}`);
+          } else {
+            await addReport({
+              authorId: currentUser.uid,
+              authorName: formData.authorName,
+              authorRole: user?.role || '店長',
+              authorPhotoURL: user?.photoURL || '',
+              storeName: formData.storeName,
+              weekNumber: 15,
+              year: 2026,
+              ...formData
+            });
+            navigate('/');
+          }
+        } catch (e) {
+          console.error('Submission error:', e);
+          alert('保存に失敗しました: ' + e);
+        }
+      } else {
+        alert('ログイン状態が無効です。ページをリロードしてください。');
       }
     }
   };
@@ -56,6 +91,9 @@ export const PostReport = () => {
   };
 
   const isStepValid = () => {
+    // 最終確認ステップ(インデックス4)は常に有効
+    if (step === 4) return true;
+    
     const currentFields = STEPS[step].fields;
     if (currentFields.length === 0) return true;
     return currentFields.every(f => formData[f] && formData[f].trim().length > 0);
@@ -186,13 +224,23 @@ export const PostReport = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・何をどうする：</label>
+                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・何をどうする</label>
                     <input 
                       type="text" 
                       placeholder="▶（未入力）"
                       className="w-full p-5 rounded-2xl bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none transition-all text-gray-700"
                       value={formData.try_what}
                       onChange={(e) => updateData('try_what', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・なぜそれをするか（理由）</label>
+                    <input 
+                      type="text" 
+                      placeholder="▶（未入力）"
+                      className="w-full p-4 rounded-2xl bg-white/40 border-none transition-all text-gray-700 text-sm"
+                      value={formData.try_why}
+                      onChange={(e) => updateData('try_why', e.target.value)}
                     />
                   </div>
                 </div>
@@ -280,7 +328,7 @@ export const PostReport = () => {
                 }`}
               >
                 {step === STEPS.length - 1 ? (
-                  <>楽園に届ける <Send size={20} className="animate-bounce" /></>
+                  <>{isEditMode ? '上書き保存する' : '送信'} <Send size={20} className="animate-bounce" /></>
                 ) : (
                   <>次に進む <ChevronRight size={20} /></>
                 )}

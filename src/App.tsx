@@ -1,45 +1,189 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { MainBoard } from './pages/MainBoard';
 import { PostReport } from './pages/PostReport';
 import { ReportDetail } from './pages/ReportDetail';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
+import { ProfileEdit } from './pages/ProfileEdit';
+import { AdminDashboard } from './pages/AdminDashboard';
 import { useAuthStore } from './store/useAuthStore';
-import { Home, PlusSquare, User, Bell, Sparkles } from 'lucide-react';
+import { useReportStore } from './store/useReportStore';
+import { useNotificationStore } from './store/useNotificationStore';
+import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
-const Navigation = () => {
-  const location = useLocation();
-  const isActive = (path: string) => location.pathname === path;
+const Header = () => {
+  const { user } = useAuthStore();
+  const { notifications, unreadCount, init: initNotif, markAsRead, markAllAsRead } = useNotificationStore();
+  const [tapCount, setTapCount] = useState(0);
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user?.uid) {
+      const unsubscribe = initNotif(user.uid);
+      return () => unsubscribe();
+    }
+  }, [user?.uid, initNotif]);
+
+  const handleSparkleClick = async () => {
+    if (!user || user.role === 'BM') return;
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    
+    tapTimeoutRef.current = setTimeout(() => setTapCount(0), 1000);
+    const newCount = tapCount + 1;
+    setTapCount(newCount);
+
+    if (newCount >= 5) {
+        setTapCount(0);
+        if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+        const pwd = window.prompt("開発者用パスワードを入力してください (数字4桁):");
+        if (pwd === "9119") {
+            try {
+                await updateDoc(doc(db, 'users', user.uid), { role: 'BM' });
+                alert("認証成功: BM(開発者)権限を取得しました。画面を再読み込みします。");
+                window.location.reload();
+            } catch (err) {
+                console.error(err);
+                alert("権限のアップデートに失敗しました。");
+            }
+        } else if (pwd !== null) {
+            alert("パスワードが一致しませんでした。");
+        }
+    }
+  };
+
+  const handleNotificationClick = (notif: any) => {
+    if (!user) return;
+    markAsRead(user.uid, notif.id);
+    setIsNotifOpen(false);
+    navigate(`/report/${notif.reportId}`);
+  };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 glass-dark border-t border-white/20 px-6 py-4 flex justify-around items-center z-50 transition-all">
-      <Link to="/" className="relative flex flex-col items-center">
-        <div className={`p-3 rounded-2xl transition-all duration-500 ${isActive('/') ? 'bg-white shadow-xl text-paradise-sunset' : 'text-white/60 hover:text-white'}`}>
-          <Home size={24} />
-        </div>
-        {isActive('/') && <motion.div layoutId="nav-dot" className="w-1 h-1 bg-paradise-sunset rounded-full mt-1" />}
-      </Link>
+    <header className="p-6 flex justify-between items-center max-w-5xl w-full mx-auto z-50">
+      <div className="flex items-center gap-3 relative">
+        <div className="relative">
+          <button 
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="w-10 h-10 bg-white/40 rounded-2xl flex flex-col items-center justify-center border border-white/40 shadow-sm cursor-pointer active:scale-95 transition-transform space-y-1"
+          >
+            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-transform ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
+            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-opacity ${isMenuOpen ? 'opacity-0' : ''}`} />
+            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-transform ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
+          </button>
 
-      <Link to="/post" className="relative -top-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-paradise-sunset to-orange-400 rounded-full flex items-center justify-center text-white shadow-2xl border-4 border-white/60 hover:scale-110 transition-transform active:scale-95 group">
-          <PlusSquare size={28} className="group-hover:rotate-90 transition-transform duration-500" />
+          <AnimatePresence>
+            {isMenuOpen && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.9, x: -10 }}
+                className="absolute top-14 left-0 bg-white/90 backdrop-blur-xl border border-white/50 rounded-3xl p-4 shadow-2xl w-48 space-y-2"
+              >
+                <Link to="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Home size={20} /> ホーム
+                </Link>
+                <Link to="/post" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <PlusSquare size={20} /> 投稿
+                </Link>
+                <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <User size={20} /> プロフィール
+                </Link>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      </Link>
 
-      <Link to="/profile" className="relative flex flex-col items-center">
-        <div className={`p-3 rounded-2xl transition-all duration-500 ${isActive('/profile') ? 'bg-white shadow-xl text-paradise-ocean' : 'text-white/60 hover:text-white'}`}>
-          <User size={24} />
+        <div 
+          onClick={handleSparkleClick}
+          className="w-10 h-10 bg-white/40 rounded-2xl flex items-center justify-center border border-white/40 shadow-sm cursor-pointer active:scale-95 transition-transform"
+        >
+            <Sparkles className="text-paradise-sunset" size={20} />
         </div>
-        {isActive('/profile') && <motion.div layoutId="nav-dot" className="w-1 h-1 bg-paradise-ocean rounded-full mt-1" />}
-      </Link>
-    </nav>
+        <div>
+          <h1 className="text-xl font-black text-white drop-shadow-md tracking-widest uppercase text-left">週次報告</h1>
+          <div className="h-0.5 w-full bg-gradient-to-r from-paradise-sunset to-transparent rounded-full" />
+        </div>
+      </div>
+
+      <div className="relative">
+        <button 
+          onClick={() => setIsNotifOpen(!isNotifOpen)}
+          className="relative p-3 glass rounded-2xl text-white/80 hover:text-white transition-all shadow-lg active:scale-95 group"
+        >
+          <Bell size={20} className="group-hover:rotate-12 transition-transform" />
+          {unreadCount > 0 && (
+            <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-paradise-sunset rounded-full border-2 border-white animate-pulse" />
+          )}
+        </button>
+
+        <AnimatePresence>
+          {isNotifOpen && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="absolute top-14 right-0 w-80 max-h-[400px] overflow-y-auto no-scrollbar bg-white/95 backdrop-blur-xl border border-white/50 rounded-3xl p-4 shadow-2xl space-y-3 z-50 text-left"
+            >
+              <div className="flex justify-between items-center mb-2 px-1">
+                <h3 className="text-sm font-black text-gray-800 flex items-center gap-2"><Bell size={16}/> 通知</h3>
+                {unreadCount > 0 && (
+                  <button onClick={() => user && markAllAsRead(user.uid)} className="text-[10px] text-paradise-ocean font-bold flex items-center gap-1 hover:underline">
+                    <CheckCircle size={10} /> すべて既読にする
+                  </button>
+                )}
+              </div>
+              
+              {notifications.filter(n => !n.isRead).length === 0 ? (
+                <div className="text-center py-6">
+                  <Bell size={24} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-gray-400 font-bold text-xs">新しい通知はありません</p>
+                </div>
+              ) : (
+                notifications.filter(n => !n.isRead).map((notif) => (
+                  <div 
+                    key={notif.id} 
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer transition-colors bg-paradise-ocean/5 hover:bg-paradise-ocean/10 border border-paradise-ocean/20`}
+                  >
+                    <div className={`p-2 rounded-xl mt-1 ${notif.type === 'comment' ? 'bg-blue-100 text-blue-500' : 'bg-pink-100 text-pink-500'}`}>
+                      {notif.type === 'comment' ? <MessageCircle size={14} /> : <Heart size={14} />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-800 leading-snug">
+                         <span className="font-black">{notif.message}</span>
+                      </p>
+                      <span className="text-[9px] font-bold text-gray-400 mt-1 block">
+                        {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {!notif.isRead && <div className="w-2 h-2 bg-paradise-sunset rounded-full mt-2" />}
+                  </div>
+                ))
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </header>
   );
 };
 
 export default function App() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, init: initAuth } = useAuthStore();
+  const { init: initReports } = useReportStore();
+
+  useEffect(() => {
+    console.log('App: useEffect for init called');
+    initAuth();
+    initReports();
+  }, [initAuth, initReports]);
 
   if (!isAuthenticated) return <Login />;
 
@@ -68,34 +212,21 @@ export default function App() {
           />
         </div>
 
-        <header className="p-6 flex justify-between items-center max-w-5xl w-full mx-auto z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-white/40 rounded-2xl flex items-center justify-center border border-white/40 shadow-sm">
-               <Sparkles className="text-paradise-sunset" size={20} />
-            </div>
-            <div>
-              <h1 className="text-xl font-black text-white drop-shadow-md tracking-widest uppercase text-left">楽園週報</h1>
-              <div className="h-0.5 w-full bg-gradient-to-r from-paradise-sunset to-transparent rounded-full" />
-            </div>
-          </div>
-          <button className="relative p-3 glass rounded-2xl text-white/80 hover:text-white transition-all shadow-lg active:scale-95 group">
-            <Bell size={20} className="group-hover:rotate-12 transition-transform" />
-            <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-paradise-sunset rounded-full border-2 border-white animate-pulse" />
-          </button>
-        </header>
+        <Header />
 
         <main className="flex-1 w-full mx-auto relative z-10">
           <AnimatePresence mode="wait">
             <Routes>
               <Route path="/" element={<MainBoard />} />
               <Route path="/post" element={<PostReport />} />
+              <Route path="/edit/:id" element={<PostReport />} />
               <Route path="/report/:id" element={<ReportDetail />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/edit" element={<ProfileEdit />} />
+              <Route path="/admin" element={<AdminDashboard />} />
             </Routes>
           </AnimatePresence>
         </main>
-        
-        <Navigation />
       </div>
     </BrowserRouter>
   );

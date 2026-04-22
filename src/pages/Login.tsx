@@ -18,8 +18,8 @@ export const Login = () => {
   const handleLogin = async () => {
     try {
       await login(id, password);
-    } catch (error) {
-      alert('ログインに失敗しました');
+    } catch (error: any) {
+      alert(`ログインに失敗しました: ${error.message}`);
     }
   };
 
@@ -63,7 +63,7 @@ export const Login = () => {
                   onClick={handleLogin}
                   className="w-full py-4 rounded-full bg-gradient-to-r from-paradise-sunset to-orange-400 text-white font-bold shadow-lg shadow-orange-200 flex items-center justify-center gap-2 hover:translate-y-[-2px] active:translate-y-[0px] transition-all"
                 >
-                  楽園に入る <ArrowRight size={20} />
+                  ログイン <ArrowRight size={20} />
                 </button>
               </div>
             </GlassCard>

@@ -1,0 +1,16 @@
+{
+  "short_name": "週次報告",
+  "name": "週次報告 - チームポジティブ掲示板",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#FF9E7D",
+  "background_color": "#F8FAFC"
+}
