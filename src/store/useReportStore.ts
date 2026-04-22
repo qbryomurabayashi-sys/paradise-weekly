@@ -289,17 +289,20 @@ export const useReportStore = create<ReportState>((set) => ({
   },
   init: () => {
     const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const reports = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as Report[];
       set({ reports });
     }, (error) => {
-      console.error('Reports listener error:', error);
+      // ログアウト時（許可なし）はエラーを出さずに静かに終了する
       if (error.code === 'permission-denied') {
-        alert('レポート一覧の読み込み権限がありません。ログインし直してください。');
+        console.log('Firebase Listener: Access denied (expected on logout)');
+        return;
       }
+      console.error('Reports listener error:', error);
     });
+    return unsubscribe;
   },
 }));

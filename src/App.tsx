@@ -178,12 +178,85 @@ const Header = () => {
 export default function App() {
   const { isAuthenticated, init: initAuth } = useAuthStore();
   const { init: initReports } = useReportStore();
+  const [isLanding, setIsLanding] = useState(true);
+  const [isLineBrowser, setIsLineBrowser] = useState(false);
 
   useEffect(() => {
-    console.log('App: useEffect for init called');
+    // LINEブラウザの検知
+    const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
+    const isLine = ua.indexOf('Line') > -1 || ua.indexOf('LINE') > -1;
+    setIsLineBrowser(isLine);
+
+    // 3.5秒のロード画面
+    const timer = setTimeout(() => setIsLanding(false), 3500);
+    
     initAuth();
-    initReports();
-  }, [initAuth, initReports]);
+    
+    return () => clearTimeout(timer);
+  }, [initAuth]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      const unsubscribe = initReports();
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    }
+  }, [isAuthenticated, initReports]);
+
+  if (isLineBrowser) {
+    return (
+      <div className="fixed inset-0 bg-paradise-ocean flex items-center justify-center p-8 text-center z-[9999]">
+        <div className="glass p-10 rounded-[3rem] border-2 border-white/40 space-y-6 max-w-sm">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-black text-gray-800">ブラウザを変更してください</h2>
+          <p className="text-sm text-gray-600 font-bold leading-relaxed">
+            LINE内ブラウザではログインが正しく動作しない場合があります。<br/><br/>
+            画面右上のメニュー（︙）から<br/>
+            <span className="text-paradise-sunset font-black">「デフォルトのブラウザで開く」</span><br/>
+            または<br/>
+            <span className="text-paradise-sunset font-black">「Safari / Chromeで開く」</span><br/>
+            を選択してください。
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLanding) {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-paradise-ocean via-white to-paradise-pink flex items-center justify-center z-[9999]">
+         <motion.div 
+           initial={{ opacity: 0, scale: 0.8 }}
+           animate={{ opacity: 1, scale: 1 }}
+           className="text-center space-y-6"
+         >
+           <motion.div 
+             animate={{ 
+               rotate: 360,
+               scale: [1, 1.1, 1]
+             }}
+             transition={{ duration: 3.5, ease: "linear", repeat: Infinity }}
+             className="w-24 h-24 bg-gradient-to-tr from-paradise-sunset to-orange-300 rounded-full mx-auto shadow-2xl shadow-orange-300/40 border-4 border-white flex items-center justify-center"
+           >
+             <Sparkles className="text-white" size={40} />
+           </motion.div>
+           <div className="space-y-2">
+             <h1 className="text-3xl font-black text-gray-800 tracking-[0.2em] uppercase drop-shadow-sm">Paradise</h1>
+             <p className="text-xs font-black text-paradise-sunset tracking-[0.4em] uppercase">Weekly Report</p>
+           </div>
+           <motion.p 
+             initial={{ opacity: 0, y: 10 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ delay: 1 }}
+             className="text-[10px] font-bold text-gray-400 mt-10 italic"
+           >
+             今日も素晴らしい一日になりますように
+           </motion.p>
+         </motion.div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) return <Login />;
 
