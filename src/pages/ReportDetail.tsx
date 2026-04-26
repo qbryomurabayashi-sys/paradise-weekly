@@ -7,6 +7,7 @@ import { doc, deleteDoc } from 'firebase/firestore';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2 } from 'lucide-react';
+import Editor from 'react-simple-wysiwyg';
 
 const REACTIONS = [
   { type: 'like', icon: ThumbsUp, label: 'いいね！', color: 'text-blue-500', bg: 'bg-blue-50' },
@@ -111,9 +112,7 @@ export const ReportDetail = () => {
             <h3 className="text-xs font-black text-paradise-sunset flex items-center gap-3 tracking-[0.3em] uppercase">
               <div className="w-1 h-5 bg-paradise-sunset rounded-full shadow-lg shadow-paradise-sunset/40" /> キープ
             </h3>
-            <div className="text-gray-800 leading-relaxed bg-white/40 p-6 rounded-[2rem] border border-white/20 shadow-inner text-lg font-medium">
-              {report.keep}
-            </div>
+            <div className="text-gray-800 leading-relaxed bg-white/40 p-6 rounded-[2rem] border border-white/20 shadow-inner text-lg font-medium prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.keep }} />
           </section>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -124,11 +123,11 @@ export const ReportDetail = () => {
               <div className="bg-red-50/30 p-5 rounded-3xl border border-red-100/30 space-y-4">
                 <div>
                   <label className="text-[9px] font-black text-red-400/60 uppercase block mb-1">現在の課題</label>
-                  <p className="text-xs text-gray-700 leading-relaxed font-bold">{report.problem_gap}</p>
+                  <div className="text-xs text-gray-700 leading-relaxed font-bold prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
                 </div>
                 <div>
                   <label className="text-[9px] font-black text-red-400/60 uppercase block mb-1">あるべき姿</label>
-                  <p className="text-xs text-gray-600 italic">理想：{report.problem_ideal}</p>
+                  <div className="text-xs text-gray-600 italic prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_ideal }} />
                 </div>
               </div>
             </section>
@@ -219,7 +218,7 @@ export const ReportDetail = () => {
                   </span>
                   <span className="text-[9px] text-gray-400 ml-auto">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <p className="text-sm text-gray-700 leading-relaxed font-medium mb-3">{c.text}</p>
+                <div className="text-sm text-gray-700 leading-relaxed font-medium mb-3 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: c.text }} />
                 
                 <div className="flex justify-end border-t border-white/20 pt-2">
                   <button 
@@ -254,26 +253,21 @@ export const ReportDetail = () => {
         </div>
 
         {/* コメント入力 */}
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/10 backdrop-blur-3xl border-t border-white/20 z-50">
-          <div className="max-w-3xl mx-auto flex gap-4 items-center">
-            <div className="flex-1 relative group">
-              <input 
-                type="text" 
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendComment()}
-                placeholder="チームにポジティブな言葉を届けよう..." 
-                className="w-full bg-white/60 border-2 border-white/30 rounded-full px-8 py-4 outline-none focus:ring-4 focus:ring-paradise-sunset/20 focus:border-paradise-sunset/50 transition-all text-sm font-bold text-gray-700 shadow-inner placeholder:text-gray-300"
-              />
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-20 pointer-events-none group-focus-within:opacity-0 transition-opacity">
-                 <span className="text-[10px] font-black uppercase text-gray-400">チームの響き</span>
-              </div>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/10 backdrop-blur-3xl border-t border-white/20 z-50">
+          <div className="max-w-3xl mx-auto flex gap-4 items-end">
+            <div className="flex-1 relative group bg-white/80 rounded-2xl overflow-hidden border-2 border-white/30 focus-within:border-paradise-sunset/50 transition-all shadow-inner">
+               <Editor
+                 containerProps={{ style: { minHeight: '60px', maxHeight: '150px', overflowY: 'auto' } }}
+                 value={comment}
+                 onChange={(e) => setComment(e.target.value)}
+                 placeholder="チームにポジティブな言葉を届けよう..."
+               />
             </div>
             <motion.button 
               whileHover={{ scale: 1.1, rotate: 10 }}
               whileTap={{ scale: 0.9 }}
               onClick={handleSendComment}
-              className="w-14 h-14 bg-gradient-to-br from-paradise-sunset to-orange-400 text-white rounded-full flex items-center justify-center shadow-xl shadow-orange-300/40 border-2 border-white/40"
+              className="w-14 h-14 shrink-0 mb-1 bg-gradient-to-br from-paradise-sunset to-orange-400 text-white rounded-full flex items-center justify-center shadow-xl shadow-orange-300/40 border-2 border-white/40"
             >
               <Send size={24} />
             </motion.button>

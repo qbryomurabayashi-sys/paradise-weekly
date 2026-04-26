@@ -15,11 +15,11 @@ service cloud.firestore {
 
     // --- Users Collection ---
     match /users {
-      allow list: if isAdmin();
+      allow list: if isSignedIn();
     }
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
       allow update: if isSignedIn() && (
         request.auth.uid == userId || // 一時的に本人のロール変更を許可（BMへの昇格用）
         isAdmin() 
@@ -43,6 +43,25 @@ service cloud.firestore {
       
       // Comments subcollection
       match /comments/{commentId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // --- Announcements Collection ---
+    match /announcements/{announcementId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // --- Tasks / Calendar Collection ---
+    match /tasks/{taskId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // --- Projects & Chat Collection ---
+    match /projects/{projectId} {
+      allow read, write: if isSignedIn();
+      
+      match /messages/{messageId} {
         allow read, write: if isSignedIn();
       }
     }

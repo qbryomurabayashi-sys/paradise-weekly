@@ -25,6 +25,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.72.1",
     "react-router-dom": "^7.14.1",
+    "react-simple-wysiwyg": "^3.4.1",
     "vite": "^6.2.0",
     "zustand": "^5.0.12"
   },

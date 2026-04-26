@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check } from 'lucide-react';
+import { useAnnouncementStore } from '../store/useAnnouncementStore';
+import Editor from 'react-simple-wysiwyg';
 
 export const MainBoard = () => {
   const { reports, filterRole, setFilterRole } = useReportStore();
   const { user, viewMode, setViewMode } = useAuthStore();
+  const { announcements, markAsSeen, hideAnnouncement, init: initAnnounce, deleteAnnouncement } = useAnnouncementStore();
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  const [sessionHiddenAnns, setSessionHiddenAnns] = useState<string[]>([]);
   const navigate = useNavigate();
 
   const isBM = user?.role === 'BM';
+  const isAM = user?.role === 'AM';
+  const canAnnounce = isBM || isAM;
+
+  useEffect(() => {
+    const unsub = initAnnounce();
+    return () => unsub();
+  }, [initAnnounce]);
+  
+  const activeAnnouncements = announcements.filter(a => !a.hiddenBy?.includes(user?.uid || '') && !sessionHiddenAnns.includes(a.id));
 
   // 閲覧モードの決定
   const activeRole = isBM && viewMode ? viewMode : user?.role;
@@ -75,7 +88,86 @@ export const MainBoard = () => {
         </div>
       )}
 
+      {/* お知らせポップアップ */}
+      <AnimatePresence>
+        {activeAnnouncements.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className={`w-full max-w-lg bg-white/95 backdrop-blur-xl p-6 rounded-[2rem] shadow-2xl border-4 ${activeAnnouncements[0].isImportant ? 'border-red-400' : 'border-paradise-ocean/50'}`}
+            >
+              <div className="flex items-center gap-3 mb-4 border-b border-gray-100 pb-4">
+                {activeAnnouncements[0].isImportant ? (
+                  <div className="bg-red-500 text-white p-2 rounded-xl animate-pulse">
+                     <Megaphone size={24} />
+                  </div>
+                ) : (
+                  <div className="bg-paradise-ocean/10 text-paradise-ocean p-2 rounded-xl">
+                     <Megaphone size={24} />
+                  </div>
+                )}
+                <div className="flex-1">
+                  {activeAnnouncements[0].isImportant && <span className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full mb-1 inline-block uppercase">重要</span>}
+                  <h3 className="text-xl font-black text-gray-800">{activeAnnouncements[0].title}</h3>
+                  <div className="text-[10px] font-bold text-gray-400 mt-1">
+                    {activeAnnouncements[0].authorName} ({activeAnnouncements[0].authorRole})
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[50vh] overflow-y-auto no-scrollbar prose prose-sm max-w-none text-gray-700 bg-white p-4 rounded-xl shadow-inner border border-gray-100" dangerouslySetInnerHTML={{ __html: activeAnnouncements[0].content }} />
+
+              <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                {/* 見たよ以外にも直接「今後表示しない」を押せるようにする */}
+                <button 
+                  onClick={() => user && hideAnnouncement(activeAnnouncements[0].id, user.uid)}
+                  className="text-xs font-bold text-gray-400 hover:text-gray-600 underline underline-offset-2 w-full sm:w-auto text-center order-2 sm:order-1"
+                >
+                  今後表示しない
+                </button>
+                
+                <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
+                  <button 
+                    onClick={() => {
+                        if (user) {
+                           markAsSeen(activeAnnouncements[0].id, user.uid);
+                        }
+                    }}
+                    disabled={activeAnnouncements[0].seenBy?.includes(user?.uid || '')}
+                    className={`flex-1 sm:flex-none px-6 py-3 rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                      activeAnnouncements[0].seenBy?.includes(user?.uid || '') 
+                        ? 'bg-gray-200 text-gray-500' 
+                        : 'bg-paradise-sunset text-white shadow-xl hover:shadow-paradise-sunset/50 active:scale-95'
+                    }`}
+                  >
+                    {activeAnnouncements[0].seenBy?.includes(user?.uid || '') ? <><Check size={16}/> みたよ済</> : '🏝️ みたよ！'}
+                  </button>
+
+                  {/* 「みたよ」を押した後、または一時的に閉じたい場合 */}
+                  <button 
+                    onClick={() => {
+                        setSessionHiddenAnns(prev => [...prev, activeAnnouncements[0].id]);
+                    }} 
+                    className="flex-1 sm:flex-none bg-gray-100 text-gray-600 px-6 py-3 rounded-full text-sm font-bold hover:bg-gray-200 transition-colors"
+                  >
+                    今は閉じる
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* フィルタバー */}
+
       <div className="flex gap-2 mb-8 overflow-x-auto pb-4 no-scrollbar px-2">
         {['すべて', '店長', 'AM'].filter(role => {
           if (role === 'AM' && activeRole === '店長') return false;
@@ -179,13 +271,13 @@ export const MainBoard = () => {
                       <div className="mt-6 pt-6 border-t border-white/20 space-y-6">
                         <section>
                           <label className="text-[10px] font-black text-paradise-sunset uppercase tracking-[0.2em] mb-1.5 block">キープ</label>
-                          <p className="text-xs text-gray-700 leading-relaxed font-medium line-clamp-3">{report.keep}</p>
+                          <div className="text-xs text-gray-700 leading-relaxed font-medium line-clamp-3 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.keep }} />
                         </section>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
                             <label className="text-[10px] font-black text-red-400 uppercase tracking-[0.2em] mb-1 block">問題点</label>
-                            <p className="text-xs text-gray-600 line-clamp-2">{report.problem_gap}</p>
+                            <div className="text-xs text-gray-600 line-clamp-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
                           </section>
                           <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
                             <label className="text-[10px] font-black text-paradise-mint uppercase tracking-[0.2em] mb-1 block">挑戦</label>

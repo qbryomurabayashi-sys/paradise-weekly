@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ChevronRight, ChevronLeft, Send, Sparkles, Check, Info } from 'lucide-react';
+import Editor from 'react-simple-wysiwyg';
 
 const STEPS = [
   { id: 'info', title: '【#店長週間報告】', desc: '*毎週日曜日18:00まで', fields: ['storeName', 'authorName'] },
@@ -174,13 +175,13 @@ export const PostReport = () => {
                     <Info size={16} />
                     <span>今週「おっ、いい感じだな」と思った小さな成功や工夫は何ですか？</span>
                   </div>
-                  <textarea
-                    autoFocus
-                    placeholder="▶（未入力）"
-                    className="w-full h-56 p-6 rounded-[2rem] bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none resize-none transition-all text-gray-700 text-lg leading-relaxed placeholder:text-gray-300"
-                    value={formData.keep}
-                    onChange={(e) => updateData('keep', e.target.value)}
-                  />
+                  <div className="bg-white/40 rounded-3xl overflow-hidden border-2 border-white/20 focus-within:border-paradise-sunset/50 transition-all">
+                    <Editor
+                      containerProps={{ style: { height: '220px', overflowY: 'auto' } }}
+                      value={formData.keep}
+                      onChange={(e) => updateData('keep', e.target.value)}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -188,21 +189,23 @@ export const PostReport = () => {
                 <div className="space-y-6">
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・本来どうあるべきだったか</label>
-                    <textarea
-                      placeholder="▶（未入力）"
-                      className="w-full h-24 p-5 rounded-2xl bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none resize-none transition-all text-gray-700 text-sm"
-                      value={formData.problem_ideal}
-                      onChange={(e) => updateData('problem_ideal', e.target.value)}
-                    />
+                    <div className="bg-white/40 rounded-2xl overflow-hidden border-2 border-white/20 focus-within:border-paradise-sunset/50 transition-all">
+                      <Editor
+                        containerProps={{ style: { height: '100px', overflowY: 'auto' } }}
+                        value={formData.problem_ideal}
+                        onChange={(e) => updateData('problem_ideal', e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・気になった出来事（GAP）</label>
-                    <textarea
-                      placeholder="▶（未入力）"
-                      className="w-full h-24 p-5 rounded-2xl bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none resize-none transition-all text-gray-700 text-sm"
-                      value={formData.problem_gap}
-                      onChange={(e) => updateData('problem_gap', e.target.value)}
-                    />
+                    <div className="bg-white/40 rounded-2xl overflow-hidden border-2 border-white/20 focus-within:border-paradise-sunset/50 transition-all">
+                      <Editor
+                        containerProps={{ style: { height: '100px', overflowY: 'auto' } }}
+                        value={formData.problem_gap}
+                        onChange={(e) => updateData('problem_gap', e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}

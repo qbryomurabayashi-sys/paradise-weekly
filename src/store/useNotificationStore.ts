@@ -21,19 +21,43 @@ interface NotificationState {
   markAllAsRead: (userId: string) => Promise<void>;
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
   init: (userId: string) => {
+    // Request permission for native notifications
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     const q = query(
       collection(db, 'users', userId, 'notifications'), 
       orderBy('createdAt', 'desc')
     );
     
+    let isInitialLoad = true;
+
     return onSnapshot(q, (snapshot) => {
       const notifs: AppNotification[] = [];
       let unread = 0;
       
+      // Handle native notifications for new actual added docs after initial load
+      if (!isInitialLoad && 'Notification' in window && Notification.permission === 'granted') {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data() as AppNotification;
+            // Only notify if it's unread
+            if (!data.isRead) {
+              const title = data.fromUserName ? `${data.fromUserName}からの通知` : '新しい通知';
+              new Notification(title, {
+                body: data.message,
+                icon: '/vite.svg', // Fallback icon path
+              });
+            }
+          }
+        });
+      }
+
       snapshot.forEach((doc) => {
         const data = doc.data() as Omit<AppNotification, 'id'>;
         notifs.push({ id: doc.id, ...data });
@@ -43,6 +67,9 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       });
       
       set({ notifications: notifs, unreadCount: unread });
+      isInitialLoad = false;
+    }, (error) => {
+      console.error('Notifications snapshot error:', error);
     });
   },
   markAsRead: async (userId, notificationId) => {

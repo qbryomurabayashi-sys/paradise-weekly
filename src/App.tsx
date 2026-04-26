@@ -7,10 +7,14 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { ProfileEdit } from './pages/ProfileEdit';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { CalendarView } from './pages/CalendarView';
+import { ProjectsView } from './pages/ProjectsView';
+import { PostAnnouncement } from './pages/PostAnnouncement';
 import { useAuthStore } from './store/useAuthStore';
 import { useReportStore } from './store/useReportStore';
 import { useNotificationStore } from './store/useNotificationStore';
-import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle } from 'lucide-react';
+import { useUsersStore } from './store/useUsersStore';
+import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -91,6 +95,17 @@ const Header = () => {
                 </Link>
                 <Link to="/post" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <PlusSquare size={20} /> 投稿
+                </Link>
+                {(user?.role === 'BM' || user?.role === 'AM') && (
+                  <Link to="/post-announcement" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                    <Sparkles size={20} className="text-paradise-ocean" /> お知らせ作成
+                  </Link>
+                )}
+                <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Calendar size={20} /> カレンダー
+                </Link>
+                <Link to="/projects" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <MessageSquare size={20} /> プロジェクト
                 </Link>
                 <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <User size={20} /> プロフィール
@@ -198,8 +213,10 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       const unsubscribe = initReports();
+      const unsubUsers = useUsersStore.getState().init();
       return () => {
         if (unsubscribe) unsubscribe();
+        if (unsubUsers) unsubUsers();
       };
     }
   }, [isAuthenticated, initReports]);
@@ -297,6 +314,9 @@ export default function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/edit" element={<ProfileEdit />} />
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/calendar" element={<CalendarView />} />
+              <Route path="/projects" element={<ProjectsView />} />
+              <Route path="/post-announcement" element={<PostAnnouncement />} />
             </Routes>
           </AnimatePresence>
         </main>

@@ -60,7 +60,7 @@ interface ReportState {
   addReaction: (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => Promise<void>;
   addCommentReaction: (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => Promise<void>;
   markAsRead: (reportId: string, userId: string) => Promise<void>;
-  init: () => void;
+  init: () => () => void;
 }
 
 export const useReportStore = create<ReportState>((set) => ({
@@ -139,6 +139,8 @@ export const useReportStore = create<ReportState>((set) => ({
         ...doc.data(),
       })) as Comment[];
       callback(cmts);
+    }, (error) => {
+      console.error('Comments snapshot error:', error);
     });
   },
   addReaction: async (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => {
