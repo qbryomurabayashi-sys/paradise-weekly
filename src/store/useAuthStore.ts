@@ -63,9 +63,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           await setDoc(doc(db, 'users', user.uid), {
             role: '店長',
             storeName: '未設定の店舗',
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString()
           });
           userDoc = await getDoc(doc(db, 'users', user.uid));
+        } else {
+          // Update last login time once per session
+          if (!sessionStorage.getItem('session_last_login_recorded')) {
+            await updateDoc(doc(db, 'users', user.uid), {
+              lastLoginAt: new Date().toISOString()
+            });
+            sessionStorage.setItem('session_last_login_recorded', 'true');
+          }
         }
 
         const userData = userDoc.exists() ? userDoc.data() : null;

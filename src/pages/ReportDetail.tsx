@@ -95,21 +95,21 @@ export const ReportDetail = () => {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-black text-gray-800">{report.authorName}</h2>
-              <span className="text-[10px] font-black bg-paradise-ocean text-white px-2 py-0.5 rounded uppercase tracking-widest">{report.authorRole}</span>
+              <span className="text-xs font-black bg-paradise-ocean text-white px-2 py-0.5 rounded uppercase tracking-widest">{report.authorRole}</span>
             </div>
-            <p className="text-sm font-bold text-gray-400 mt-1">{report.storeName} • 第{report.weekNumber}週</p>
+            <p className="text-base font-bold text-gray-400 mt-1">{report.storeName} • 第{report.weekNumber}週</p>
           </div>
           {(isMaster || isOwner) && (
             <div className="ml-auto flex gap-2">
-              <button onClick={handleEdit} className="text-xs font-bold bg-white/50 text-gray-600 px-3 py-1.5 rounded-full hover:bg-white/80 transition-colors flex items-center gap-1"><Edit size={12}/> 編集</button>
-              <button onClick={handleDelete} className="text-xs font-bold bg-red-100 text-red-600 px-3 py-1.5 rounded-full hover:bg-red-200 transition-colors flex items-center gap-1"><Trash2 size={12}/> 削除</button>
+              <button onClick={handleEdit} className="text-sm font-bold bg-white/50 text-gray-600 px-3 py-1.5 rounded-full hover:bg-white/80 transition-colors flex items-center gap-1"><Edit size={12}/> 編集</button>
+              <button onClick={handleDelete} className="text-sm font-bold bg-red-100 text-red-600 px-3 py-1.5 rounded-full hover:bg-red-200 transition-colors flex items-center gap-1"><Trash2 size={12}/> 削除</button>
             </div>
           )}
         </div>
 
         <div className="space-y-10">
           <section className="space-y-3">
-            <h3 className="text-xs font-black text-paradise-sunset flex items-center gap-3 tracking-[0.3em] uppercase">
+            <h3 className="text-sm font-black text-paradise-sunset flex items-center gap-3 tracking-[0.3em] uppercase">
               <div className="w-1 h-5 bg-paradise-sunset rounded-full shadow-lg shadow-paradise-sunset/40" /> キープ
             </h3>
             <div className="text-gray-800 leading-relaxed bg-white/40 p-6 rounded-[2rem] border border-white/20 shadow-inner text-lg font-medium prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.keep }} />
@@ -117,32 +117,32 @@ export const ReportDetail = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <section className="space-y-3">
-              <h3 className="text-xs font-black text-red-400 flex items-center gap-3 tracking-[0.3em] uppercase">
+              <h3 className="text-sm font-black text-red-400 flex items-center gap-3 tracking-[0.3em] uppercase">
                 <div className="w-1 h-5 bg-red-400 rounded-full shadow-lg shadow-red-400/40" /> 問題点
               </h3>
               <div className="bg-red-50/30 p-5 rounded-3xl border border-red-100/30 space-y-4">
                 <div>
-                  <label className="text-[9px] font-black text-red-400/60 uppercase block mb-1">現在の課題</label>
-                  <div className="text-xs text-gray-700 leading-relaxed font-bold prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
+                  <label className="text-[10px] font-black text-red-400/60 uppercase block mb-1">現在の課題</label>
+                  <div className="text-sm text-gray-700 leading-relaxed font-bold prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-red-400/60 uppercase block mb-1">あるべき姿</label>
-                  <div className="text-xs text-gray-600 italic prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_ideal }} />
+                  <label className="text-[10px] font-black text-red-400/60 uppercase block mb-1">あるべき姿</label>
+                  <div className="text-sm text-gray-600 italic prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_ideal }} />
                 </div>
               </div>
             </section>
 
             <section className="space-y-3">
-              <h3 className="text-xs font-black text-paradise-mint flex items-center gap-3 tracking-[0.3em] uppercase">
+              <h3 className="text-sm font-black text-paradise-mint flex items-center gap-3 tracking-[0.3em] uppercase">
                 <div className="w-1 h-5 bg-paradise-mint rounded-full shadow-lg shadow-paradise-mint/40" /> 次の挑戦
               </h3>
               <div className="bg-green-50/30 p-5 rounded-3xl border border-green-100/30 space-y-3">
-                <p className="text-sm font-black text-gray-800">{report.try_what}</p>
+                <p className="text-base font-black text-gray-800">{report.try_what}</p>
                 <div className="flex flex-wrap gap-2">
-                   <span className="text-[10px] bg-white/50 px-2 py-1 rounded-full text-gray-500 font-bold">誰が: {report.try_who}</span>
-                   <span className="text-[10px] bg-white/50 px-2 py-1 rounded-full text-gray-500 font-bold">いつ: {report.try_when}</span>
+                   <span className="text-xs bg-white/50 px-2 py-1 rounded-full text-gray-500 font-bold">誰が: {report.try_who}</span>
+                   <span className="text-xs bg-white/50 px-2 py-1 rounded-full text-gray-500 font-bold">いつ: {report.try_when}</span>
                 </div>
-                <p className="text-[10px] text-gray-400 italic">理由: {report.try_why}</p>
+                <p className="text-xs text-gray-400 italic">理由: {report.try_why}</p>
               </div>
             </section>
           </div>
@@ -171,10 +171,10 @@ export const ReportDetail = () => {
               >
                 <r.icon size={26} />
               </motion.div>
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex flex-col items-center">
+              <span className="text-xs font-black text-gray-500 uppercase tracking-widest flex flex-col items-center">
                 <span>{r.label} ({report.reactions?.find(react => react.type === r.type)?.count || 0})</span>
                 {report.reactions?.find(react => react.type === r.type)?.userNames && (
-                   <span className="text-[8px] text-gray-400 normal-case mt-0.5 line-clamp-1 max-w-[80px]">
+                   <span className="text-[10px] text-gray-400 normal-case mt-0.5 line-clamp-1 max-w-[80px]">
                      {report.reactions?.find(react => react.type === r.type)?.userNames?.join(', ')}
                    </span>
                 )}
@@ -212,13 +212,13 @@ export const ReportDetail = () => {
                  <div className="absolute left-[-6px] top-6 w-3 h-3 glass rotate-45 border-r-0 border-t-0" />
                  
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="font-black text-sm text-gray-800">{c.authorName}</span>
-                  <span className={`text-[9px] text-white px-2 py-0.5 rounded-full font-black uppercase ${c.authorRole === 'AM' ? 'bg-paradise-ocean/80' : 'bg-gray-400/80'}`}>
+                  <span className="font-black text-base text-gray-800">{c.authorName}</span>
+                  <span className={`text-[10px] text-white px-2 py-0.5 rounded-full font-black uppercase ${c.authorRole === 'AM' ? 'bg-paradise-ocean/80' : 'bg-gray-400/80'}`}>
                     {c.authorRole}
                   </span>
-                  <span className="text-[9px] text-gray-400 ml-auto">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-[10px] text-gray-400 ml-auto">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <div className="text-sm text-gray-700 leading-relaxed font-medium mb-3 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: c.text }} />
+                <div className="text-base text-gray-700 leading-relaxed font-medium mb-3 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: c.text }} />
                 
                 <div className="flex justify-end border-t border-white/20 pt-2">
                   <button 
@@ -232,7 +232,7 @@ export const ReportDetail = () => {
                     }}
                     className={`flex flex-col items-end gap-1 group`}
                   >
-                    <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full transition-colors ${
+                    <div className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full transition-colors ${
                       c.reactions?.some((r: any) => r.type === 'like' && r.userIds.includes(user?.uid)) 
                         ? 'bg-blue-100 text-blue-600' 
                         : 'bg-white/50 text-gray-500 hover:bg-white/80'
@@ -241,7 +241,7 @@ export const ReportDetail = () => {
                       <span>{c.reactions?.find((r: any) => r.type === 'like')?.userIds.length || 0}</span>
                     </div>
                     {c.reactions?.find((r: any) => r.type === 'like')?.userNames && (
-                      <span className="text-[8px] text-gray-400 line-clamp-1 max-w-[150px]">
+                      <span className="text-[10px] text-gray-400 line-clamp-1 max-w-[150px]">
                         {c.reactions?.find((r: any) => r.type === 'like')?.userNames?.join(', ')}
                       </span>
                     )}

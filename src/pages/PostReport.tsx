@@ -139,17 +139,17 @@ export const PostReport = () => {
                 )}
                 {STEPS[step].title}
               </h2>
-              <p className="text-sm font-bold text-gray-400 mt-2 ml-1">{STEPS[step].desc}</p>
+              <p className="text-base font-bold text-gray-400 mt-2 ml-1">{STEPS[step].desc}</p>
             </div>
 
             <div className="flex-1 px-2">
               {step === 0 && (
                 <div className="space-y-6">
                   <div className="bg-paradise-blue/10 p-4 rounded-xl border border-paradise-blue/20">
-                    <p className="text-xs font-bold text-paradise-ocean/80 text-center">※毎週日曜日18:00まで</p>
+                    <p className="text-sm font-bold text-paradise-ocean/80 text-center">※毎週日曜日18:00まで</p>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">店舗：（未入力）</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">店舗：（未入力）</label>
                     <input 
                       type="text"
                       className="w-full p-5 rounded-2xl bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none transition-all text-gray-700"
@@ -158,7 +158,7 @@ export const PostReport = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">氏名：（未入力）</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">氏名：（未入力）</label>
                     <input 
                       type="text"
                       className="w-full p-5 rounded-2xl bg-white/40 border-2 border-white/20 focus:border-paradise-sunset/50 focus:bg-white/60 outline-none transition-all text-gray-700"
@@ -171,7 +171,7 @@ export const PostReport = () => {
 
               {step === 1 && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-xs font-bold text-paradise-ocean/80 bg-paradise-blue/20 p-3 rounded-xl">
+                  <div className="flex items-center gap-2 text-sm font-bold text-paradise-ocean/80 bg-paradise-blue/20 p-3 rounded-xl">
                     <Info size={16} />
                     <span>今週「おっ、いい感じだな」と思った小さな成功や工夫は何ですか？</span>
                   </div>
@@ -188,7 +188,7 @@ export const PostReport = () => {
               {step === 2 && (
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・本来どうあるべきだったか</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・本来どうあるべきだったか</label>
                     <div className="bg-white/40 rounded-2xl overflow-hidden border-2 border-white/20 focus-within:border-paradise-sunset/50 transition-all">
                       <Editor
                         containerProps={{ style: { height: '100px', overflowY: 'auto' } }}
@@ -198,7 +198,7 @@ export const PostReport = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・気になった出来事（GAP）</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・気になった出来事（GAP）</label>
                     <div className="bg-white/40 rounded-2xl overflow-hidden border-2 border-white/20 focus-within:border-paradise-sunset/50 transition-all">
                       <Editor
                         containerProps={{ style: { height: '100px', overflowY: 'auto' } }}
@@ -213,11 +213,11 @@ export const PostReport = () => {
               {step === 3 && (
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・誰が・いつ</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・誰が・いつ</label>
                     <input 
                       type="text" 
                       placeholder="▶（未入力）"
-                      className="w-full p-4 rounded-2xl bg-white/40 border-none transition-all text-gray-700 text-sm"
+                      className="w-full p-4 rounded-2xl bg-white/40 border-none transition-all text-gray-700 text-base"
                       value={formData.try_who + (formData.try_when ? ' / ' + formData.try_when : '')}
                       onChange={(e) => {
                         const parts = e.target.value.split(' / ');
@@ -227,7 +227,7 @@ export const PostReport = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・何をどうする</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・何をどうする</label>
                     <input 
                       type="text" 
                       placeholder="▶（未入力）"
@@ -237,11 +237,11 @@ export const PostReport = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・なぜそれをするか（理由）</label>
+                    <label className="block text-xs font-black text-gray-400 mb-2 ml-4 uppercase tracking-widest">・なぜそれをするか（理由）</label>
                     <input 
                       type="text" 
                       placeholder="▶（未入力）"
-                      className="w-full p-4 rounded-2xl bg-white/40 border-none transition-all text-gray-700 text-sm"
+                      className="w-full p-4 rounded-2xl bg-white/40 border-none transition-all text-gray-700 text-base"
                       value={formData.try_why}
                       onChange={(e) => updateData('try_why', e.target.value)}
                     />
@@ -251,57 +251,57 @@ export const PostReport = () => {
 
               {/* Step 3: 確認画面 */}
               {step === 4 && (
-                <div className="space-y-6 animate-fade-in text-sm max-h-[500px] overflow-y-auto no-scrollbar pb-10">
+                <div className="space-y-6 animate-fade-in text-base max-h-[500px] overflow-y-auto no-scrollbar pb-10">
                   <div className="bg-white/30 p-5 rounded-[2rem] border border-white/40 shadow-inner">
                     <div className="flex justify-between items-center mb-2">
-                      <label className="text-[10px] font-black text-paradise-sunset uppercase tracking-[0.2em] ml-2">店舗 / 氏名</label>
-                      <span className="text-[10px] text-gray-500 font-bold">※毎週日曜日18:00まで</span>
+                      <label className="text-xs font-black text-paradise-sunset uppercase tracking-[0.2em] ml-2">店舗 / 氏名</label>
+                      <span className="text-xs text-gray-500 font-bold">※毎週日曜日18:00まで</span>
                     </div>
                     <p className="text-gray-700 font-bold">{formData.storeName} / {formData.authorName}</p>
                   </div>
                   <div className="bg-white/30 p-5 rounded-[2rem] border border-white/40 shadow-inner">
-                    <label className="text-[10px] font-black text-paradise-sunset block mb-2 uppercase tracking-[0.2em] ml-2">キープ</label>
+                    <label className="text-xs font-black text-paradise-sunset block mb-2 uppercase tracking-[0.2em] ml-2">キープ</label>
                     <p className="text-gray-700 font-medium leading-relaxed italic">"{formData.keep || '未入力'}"</p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-red-50/40 p-5 rounded-3xl border border-red-100/40 shadow-sm">
-                      <label className="text-[10px] font-black text-red-400 block mb-2 uppercase tracking-[0.2em] ml-1">問題点 (ギャップ)</label>
-                      <p className="text-gray-600 text-xs leading-relaxed">{formData.problem_gap || '未入力'}</p>
+                      <label className="text-xs font-black text-red-400 block mb-2 uppercase tracking-[0.2em] ml-1">問題点 (ギャップ)</label>
+                      <p className="text-gray-600 text-sm leading-relaxed">{formData.problem_gap || '未入力'}</p>
                     </div>
                     <div className="bg-green-50/40 p-5 rounded-3xl border border-green-100/40 shadow-sm">
-                      <label className="text-[10px] font-black text-green-500 block mb-2 uppercase tracking-[0.2em] ml-1">理想の姿</label>
-                      <p className="text-gray-600 text-xs leading-relaxed">{formData.problem_ideal || '未入力'}</p>
+                      <label className="text-xs font-black text-green-500 block mb-2 uppercase tracking-[0.2em] ml-1">理想の姿</label>
+                      <p className="text-gray-600 text-sm leading-relaxed">{formData.problem_ideal || '未入力'}</p>
                     </div>
                   </div>
 
                   <div className="bg-blue-50/40 p-6 rounded-[2rem] border border-blue-100/40 shadow-sm">
-                    <label className="text-[10px] font-black text-paradise-ocean block mb-3 uppercase tracking-[0.2em] ml-1">アクションプラン</label>
+                    <label className="text-xs font-black text-paradise-ocean block mb-3 uppercase tracking-[0.2em] ml-1">アクションプラン</label>
                     <div className="space-y-3">
                       <div className="flex items-start gap-2">
-                        <span className="text-[10px] font-bold text-gray-400 w-12 pt-1 uppercase">何を:</span>
-                        <p className="text-sm font-bold text-gray-700">{formData.try_what}</p>
+                        <span className="text-xs font-bold text-gray-400 w-12 pt-1 uppercase">何を:</span>
+                        <p className="text-base font-bold text-gray-700">{formData.try_what}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold text-gray-400 w-12 pt-1 uppercase">誰が:</span>
-                          <p className="text-xs text-gray-600 font-medium">{formData.try_who}</p>
+                          <span className="text-xs font-bold text-gray-400 w-12 pt-1 uppercase">誰が:</span>
+                          <p className="text-sm text-gray-600 font-medium">{formData.try_who}</p>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold text-gray-400 w-12 pt-1 uppercase">いつ:</span>
-                          <p className="text-xs text-gray-600 font-medium">{formData.try_when}</p>
+                          <span className="text-xs font-bold text-gray-400 w-12 pt-1 uppercase">いつ:</span>
+                          <p className="text-sm text-gray-600 font-medium">{formData.try_when}</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2 border-t border-white/20 pt-3">
-                        <span className="text-[10px] font-bold text-gray-400 w-12 pt-1 uppercase">なぜ:</span>
-                        <p className="text-xs text-gray-500 italic">{formData.try_why}</p>
+                        <span className="text-xs font-bold text-gray-400 w-12 pt-1 uppercase">なぜ:</span>
+                        <p className="text-sm text-gray-500 italic">{formData.try_why}</p>
                       </div>
                     </div>
                   </div>
                   
                   <div className="flex flex-col items-center gap-2 pt-6 opacity-60">
                     <Sparkles className="text-paradise-sunset animate-pulse" size={16} />
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
                       この内容はチーム全体にポジティブな光として共有されます
                     </p>
                   </div>

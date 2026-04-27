@@ -105,19 +105,19 @@ export const ProjectsView = () => {
       <div className={`md:w-1/3 w-full flex flex-col gap-4 ${activeProject ? 'hidden md:flex' : 'flex'}`}>
         <div className="flex justify-between items-center bg-white/40 p-4 rounded-3xl border border-white/40">
           <h2 className="font-black text-gray-800 flex items-center gap-2"><MessageSquare size={20} className="text-paradise-ocean"/> プロジェクト</h2>
-          <button onClick={() => setShowAdd(!showAdd)} className="bg-paradise-ocean text-white p-2 text-xs rounded-full shadow-md"><Plus size={16}/></button>
+          <button onClick={() => setShowAdd(!showAdd)} className="bg-paradise-ocean text-white p-2 text-sm rounded-full shadow-md"><Plus size={16}/></button>
         </div>
 
         <AnimatePresence>
           {showAdd && (
             <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} exit={{opacity:0, height:0}} className="glass p-4 rounded-3xl flex flex-col gap-3">
-              <input type="text" value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} placeholder="グループ名..." className="flex-1 p-2 rounded-xl text-sm border outline-none font-bold text-gray-700 w-full" />
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">メンバー選択</div>
+              <input type="text" value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} placeholder="グループ名..." className="flex-1 p-2 rounded-xl text-base border outline-none font-bold text-gray-700 w-full" />
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">メンバー選択</div>
               <MultiUserSelect selectedUsers={selectedMembers} onChange={setSelectedMembers} placeholder="メンバーを追加..." />
               <button 
                 onClick={handleCreateProject} 
                 disabled={!newProjectName}
-                className="bg-paradise-mint text-white py-2 rounded-xl font-bold text-sm disabled:opacity-50 mt-1"
+                className="bg-paradise-mint text-white py-2 rounded-xl font-bold text-base disabled:opacity-50 mt-1"
               >
                 作成
               </button>
@@ -130,7 +130,7 @@ export const ProjectsView = () => {
             <div key={p.id} onClick={() => setActiveProject(p)} className={`p-4 rounded-3xl cursor-pointer transition-all border ${activeProject?.id === p.id ? 'bg-paradise-ocean/10 border-paradise-ocean shadow-inner' : 'bg-white/60 border-white/50 hover:bg-white/80'} flex justify-between items-center group`}>
               <div>
                 <div className="font-bold text-gray-800">{p.name}</div>
-                <div className="text-[10px] text-gray-400 font-bold mt-1 max-w-[150px] truncate">
+                <div className="text-xs text-gray-400 font-bold mt-1 max-w-[150px] truncate">
                   {p.members ? p.members.map((m: any) => m.name).join(', ') : 'メンバーなし'}
                 </div>
               </div>
@@ -153,7 +153,7 @@ export const ProjectsView = () => {
         <div className="flex-1 flex flex-col glass rounded-[2rem] border border-white/50 overflow-hidden relative shadow-2xl">
           <div className="bg-white/80 backdrop-blur-md p-4 border-b border-white/50 flex justify-between items-center z-10 sticky top-0">
              <div className="flex items-center gap-2">
-               <button onClick={() => setActiveProject(null)} className="md:hidden text-gray-500 mr-2 hover:bg-gray-100 p-1 rounded-full px-3 text-xs font-bold">戻る</button>
+               <button onClick={() => setActiveProject(null)} className="md:hidden text-gray-500 mr-2 hover:bg-gray-100 p-1 rounded-full px-3 text-sm font-bold">戻る</button>
                <h3 className="font-black text-gray-800">{activeProject.name}</h3>
              </div>
           </div>
@@ -163,11 +163,11 @@ export const ProjectsView = () => {
               const isMine = m.authorId === user?.uid;
               return (
                 <div key={m.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
-                  <span className="text-[10px] font-bold text-gray-400 mb-1 px-2">{m.authorName} ({m.authorRole})</span>
-                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${isMine ? 'bg-paradise-ocean text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border border-white/50'}`}>
+                  <span className="text-xs font-bold text-gray-400 mb-1 px-2">{m.authorName} ({m.authorRole})</span>
+                  <div className={`max-w-[80%] p-3 rounded-2xl text-base leading-relaxed shadow-sm ${isMine ? 'bg-paradise-ocean text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border border-white/50'}`}>
                     {m.text}
                   </div>
-                  <span className="text-[9px] text-gray-300 mt-1">{new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                  <span className="text-[10px] text-gray-300 mt-1">{new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 </div>
               );
             })}

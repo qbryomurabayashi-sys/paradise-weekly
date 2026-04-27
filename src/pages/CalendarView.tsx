@@ -94,10 +94,10 @@ export const CalendarView = () => {
                setDate(format(cloneDay, 'yyyy-MM-dd'));
             }}
           >
-            <div className="text-right text-xs pr-1">{formattedDate}</div>
+            <div className="text-right text-sm pr-1">{formattedDate}</div>
             <div className="flex flex-col gap-1 mt-1 px-1 overflow-y-auto max-h-[50px] no-scrollbar">
               {dayTasks.map(t => (
-                <div key={t.id} className="text-[9px] bg-white border border-paradise-ocean/20 text-paradise-ocean rounded px-1 truncate shadow-sm font-bold" title={t.title}>
+                <div key={t.id} className="text-[10px] bg-white border border-paradise-ocean/20 text-paradise-ocean rounded px-1 truncate shadow-sm font-bold" title={t.title}>
                   {t.title}
                 </div>
               ))}
@@ -121,7 +121,7 @@ export const CalendarView = () => {
     const startDate = startOfWeek(currentDate);
     for (let i = 0; i < 7; i++) {
       days.push(
-        <div className="text-center font-bold text-xs py-2 text-gray-500 uppercase tracking-widest bg-white/60" key={i}>
+        <div className="text-center font-bold text-sm py-2 text-gray-500 uppercase tracking-widest bg-white/60" key={i}>
           {format(addDays(startDate, i), "E", { locale: ja })}
         </div>
       );
@@ -176,41 +176,41 @@ export const CalendarView = () => {
               className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/50 shadow-xl space-y-3 overflow-hidden"
             >
                <div>
-                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">タイトル</label>
-                 <input type="text" value={title} onChange={(e)=>setTitle(e.target.value)} className="w-full p-2 border rounded-xl outline-none focus:border-paradise-ocean text-sm" placeholder="イベント名" />
+                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">タイトル</label>
+                 <input type="text" value={title} onChange={(e)=>setTitle(e.target.value)} className="w-full p-2 border rounded-xl outline-none focus:border-paradise-ocean text-base" placeholder="イベント名" />
                </div>
                <div className="grid grid-cols-2 gap-2">
                  <div>
-                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">日付</label>
-                   <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-full p-2 border rounded-xl outline-none focus:border-paradise-ocean text-[11px]" />
+                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">日付</label>
+                   <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-full p-2 border rounded-xl outline-none focus:border-paradise-ocean text-xs" />
                  </div>
                  <div>
-                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">担当</label>
+                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">担当</label>
                    <MultiUserSelect selectedUsers={selectedAssignees} onChange={setSelectedAssignees} placeholder="担当者を選択" />
                  </div>
                </div>
-               <button onClick={handleAddTask} className="w-full bg-paradise-mint text-white py-2 rounded-xl font-bold text-sm shadow-md mt-2">登録</button>
+               <button onClick={handleAddTask} className="w-full bg-paradise-mint text-white py-2 rounded-xl font-bold text-base shadow-md mt-2">登録</button>
             </motion.div>
           )}
         </AnimatePresence>
 
         <div className="space-y-3 max-h-[500px] overflow-y-auto no-scrollbar pb-6">
           {tasksToDisplay.length === 0 ? (
-            <div className="text-center p-6 bg-white/30 rounded-3xl border border-white/40 border-dashed text-gray-400 font-bold text-sm">
+            <div className="text-center p-6 bg-white/30 rounded-3xl border border-white/40 border-dashed text-gray-400 font-bold text-base">
               予定はありません
             </div>
           ) : (
             tasksToDisplay.map(task => (
               <GlassCard key={task.id} className="p-4 border-l-4 border-l-paradise-mint flex flex-col gap-2">
                 <div className="flex justify-between items-start">
-                  <h4 className="font-bold text-gray-800 text-sm leading-tight">{task.title}</h4>
+                  <h4 className="font-bold text-gray-800 text-base leading-tight">{task.title}</h4>
                   {(user?.role === 'BM' || user?.role === 'AM' || task.authorId === user?.uid) && (
                     <button onClick={() => handleDelete(task.id)} className="text-gray-400 hover:text-red-500 bg-white/50 p-1.5 rounded-full transition-all active:scale-95 shadow-sm -mr-1">
                       <X size={14} />
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 overflow-x-auto no-scrollbar py-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-gray-500 overflow-x-auto no-scrollbar py-1">
                    <div className="bg-white/60 px-2 py-0.5 rounded-md border border-gray-100 shrink-0">{task.date}</div>
                    {task.assignees && task.assignees.length > 0 ? (
                      task.assignees.map((a: any) => (

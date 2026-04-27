@@ -104,11 +104,11 @@ export const ProfileEdit = () => {
                         accept="image/*" 
                         className="hidden" 
                     />
-                    <p className="text-[10px] font-bold text-gray-400">タップしてアイコンを変更</p>
+                    <p className="text-xs font-bold text-gray-400">タップしてアイコンを変更</p>
                 </div>
 
                 <div>
-                    <label className="text-xs font-bold text-paradise-sunset uppercase tracking-wider block mb-2">表示名</label>
+                    <label className="text-sm font-bold text-paradise-sunset uppercase tracking-wider block mb-2">表示名</label>
                     <input 
                         type="text" 
                         value={name} 
@@ -118,7 +118,7 @@ export const ProfileEdit = () => {
                     />
                 </div>
                 <div>
-                    <label className="text-xs font-bold text-paradise-sunset uppercase tracking-wider block mb-2">新しいパスワード</label>
+                    <label className="text-sm font-bold text-paradise-sunset uppercase tracking-wider block mb-2">新しいパスワード</label>
                     <input 
                         type="password" 
                         value={password} 

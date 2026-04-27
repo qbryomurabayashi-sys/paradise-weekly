@@ -12,12 +12,85 @@
         "photoURL": { "type": "string" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Store information and required staffing settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "requiredStaffing": {
+          "type": "object",
+          "properties": {
+            "monday": { "type": "number" },
+            "weekday": { "type": "number" },
+            "friday": { "type": "number" },
+            "saturday": { "type": "number" },
+            "sundayHoliday": { "type": "number" }
+          }
+        },
+        "closedDaysOfWeek": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "closedDates": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["id", "name"]
+    },
+    "Staff": {
+      "title": "Staff",
+      "description": "Staff member information for shift management",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "employmentType": { "type": "string", "enum": ["fulltime", "parttime"] },
+        "defaultPtShiftType": { "type": "string", "enum": ["full", "short"] },
+        "lastName": { "type": "string" },
+        "firstName": { "type": "string" },
+        "monthlyOffDays": { "type": "number" },
+        "weeklyWorkDays": { "type": "number" }
+      },
+      "required": ["id", "storeId", "lastName", "firstName", "employmentType"]
+    },
+    "ShiftRequest": {
+      "title": "Shift Request",
+      "description": "Request for time off or external duties",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "storeId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["希望休", "有休", "フリー有休", "会議", "研修", "特休"] },
+        "ptShiftType": { "type": "string", "enum": ["full", "short"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "submittedBy": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "staffId", "storeId", "date", "type", "status", "submittedBy"]
     }
   },
   "firestore": {
     "/users/{uid}": {
       "schema": { "$ref": "#/entities/User" },
       "description": "Stores user profile and role information"
+    },
+    "/stores/{storeId}": {
+      "schema": { "$ref": "#/entities/Store" },
+      "description": "Store master data and staffing requirements"
+    },
+    "/staffs/{staffId}": {
+      "schema": { "$ref": "#/entities/Staff" },
+      "description": "Staff master data"
+    },
+    "/shift_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/ShiftRequest" },
+      "description": "Shift requests and events"
     }
   }
 }

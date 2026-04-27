@@ -9,6 +9,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json'; // 階層に注意
+import { formatDistanceToNow } from 'date-fns';
+import { ja } from 'date-fns/locale';
 
 // 現在のログイン情報を維持したままユーザー作成を行うためのセカンダリアプリ
 const secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
@@ -19,6 +21,7 @@ interface AppUser {
     name: string;
     role: '店長' | 'AM' | 'BM';
     storeName: string;
+    lastLoginAt?: string;
 }
 
 export const AdminDashboard = () => {
@@ -102,7 +105,7 @@ export const AdminDashboard = () => {
             
             <GlassCard className="p-6 space-y-4 shadow-xl border-2 border-paradise-sunset/20 bg-white/50">
                 <h3 className="text-lg font-bold flex items-center gap-2"><UserPlus size={20} className="text-paradise-sunset" /> 新規ユーザー一括・個別作成</h3>
-                <p className="text-xs text-gray-500 leading-relaxed font-bold">
+                <p className="text-sm text-gray-500 leading-relaxed font-bold">
                     IDを指定してアカウントを作成します。<br/>
                     初期パスワードは全員共通で <span className="bg-gray-100 px-1 rounded">password</span> に設定されます。
                 </p>
@@ -112,19 +115,19 @@ export const AdminDashboard = () => {
                         placeholder="ログインID (例: admin_taro)"
                         value={newUserId}
                         onChange={e => setNewUserId(e.target.value)}
-                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-sm"
+                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-base"
                     />
                     <input 
                         type="text" 
                         placeholder="表示名 (空ならIDと同じ)"
                         value={newUserName}
                         onChange={e => setNewUserName(e.target.value)}
-                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-sm"
+                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-base"
                     />
                     <select 
                         value={newUserRole}
                         onChange={e => setNewUserRole(e.target.value as any)}
-                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-sm"
+                        className="p-3 rounded-xl bg-white border outline-none focus:ring-2 focus:ring-paradise-sunset text-base"
                     >
                         <option value="店長">店長</option>
                         <option value="AM">AM</option>
@@ -146,12 +149,19 @@ export const AdminDashboard = () => {
                     <GlassCard key={u.uid} className="p-4 flex items-center justify-between">
                         <div>
                             <p className="font-bold">{u.name}</p>
-                            <p className="text-xs text-gray-500">{u.storeName} ({u.uid})</p>
+                            <p className="text-sm text-gray-500">{u.storeName} ({u.uid})</p>
+                            {(u.role === 'AM' || u.role === '店長') && (
+                                u.lastLoginAt ? (
+                                    <p className="text-sm text-blue-500 mt-1">最終ログイン: {formatDistanceToNow(new Date(u.lastLoginAt), { addSuffix: true, locale: ja })}</p>
+                                ) : (
+                                    <p className="text-sm text-gray-400 mt-1">ログイン履歴なし</p>
+                                )
+                            )}
                         </div>
                         <select 
                             value={u.role} 
                             onChange={(e) => handleRoleChange(u.uid, e.target.value as any)}
-                            className="p-2 rounded bg-white border text-sm font-bold"
+                            className="p-2 rounded bg-white border text-base font-bold"
                         >
                             <option value="店長">店長</option>
                             <option value="AM">AM</option>

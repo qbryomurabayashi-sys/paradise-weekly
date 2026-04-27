@@ -42,7 +42,7 @@ export const Login = () => {
               </div>
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
-                  <label className="text-xs font-bold text-gray-400 ml-4">ID</label>
+                  <label className="text-sm font-bold text-gray-400 ml-4">ID</label>
                   <input 
                     type="text" 
                     value={id}
@@ -51,7 +51,7 @@ export const Login = () => {
                   />
                 </div>
                 <div className="space-y-2 text-left">
-                  <label className="text-xs font-bold text-gray-400 ml-4">パスワード</label>
+                  <label className="text-sm font-bold text-gray-400 ml-4">パスワード</label>
                   <input 
                     type="password" 
                     value={password}

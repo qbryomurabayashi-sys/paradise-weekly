@@ -58,13 +58,13 @@ export const PostAnnouncement = () => {
             </div>
             <div>
               <h2 className="text-2xl font-black text-gray-800">全体お知らせ作成</h2>
-              <p className="text-xs font-bold text-gray-400">全員のトップ画面にポップアップ表示されます</p>
+              <p className="text-sm font-bold text-gray-400">全員のトップ画面にポップアップ表示されます</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">タイトル</label>
+              <label className="text-sm font-bold text-gray-500 uppercase tracking-widest block mb-2">タイトル</label>
               <input 
                 type="text" 
                 value={title} 
@@ -75,7 +75,7 @@ export const PostAnnouncement = () => {
             </div>
 
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">本文 (色や太字が使えます)</label>
+              <label className="text-sm font-bold text-gray-500 uppercase tracking-widest block mb-2">本文 (色や太字が使えます)</label>
               <div className="bg-white/60 rounded-2xl overflow-hidden border-2 border-white/40 focus-within:border-paradise-ocean transition-all shadow-inner">
                 <Editor 
                   containerProps={{ style: { height: '240px', overflowY: 'auto' } }}
@@ -90,8 +90,8 @@ export const PostAnnouncement = () => {
                 <div className="flex items-center gap-2">
                   <BellRing className={`${isImportant ? 'text-red-500 animate-pulse' : 'text-gray-400'}`} size={20}/>
                   <div>
-                    <div className="text-sm font-bold text-gray-700">重要フラグ</div>
-                    <div className="text-[10px] text-gray-500">赤色で目立つように表示</div>
+                    <div className="text-base font-bold text-gray-700">重要フラグ</div>
+                    <div className="text-xs text-gray-500">赤色で目立つように表示</div>
                   </div>
                 </div>
                 <div className={`w-12 h-6 rounded-full p-1 transition-colors ${isImportant ? 'bg-red-400' : 'bg-gray-300'}`}>
@@ -100,14 +100,14 @@ export const PostAnnouncement = () => {
               </div>
 
               <div className="bg-white/50 p-4 rounded-2xl border border-white/40">
-                <label className="text-xs font-bold text-paradise-ocean block mb-1 flex items-center gap-1">
-                  いつまで表示するか <span className="text-red-400 text-[10px]">必須</span>
+                <label className="text-sm font-bold text-paradise-ocean block mb-1 flex items-center gap-1">
+                  いつまで表示するか <span className="text-red-400 text-xs">必須</span>
                 </label>
                 <input 
                   type="datetime-local" 
                   value={displayUntil} 
                   onChange={e=>setDisplayUntil(e.target.value)} 
-                  className="w-full p-2 bg-white/50 rounded-xl outline-none text-sm font-bold text-gray-700 border border-gray-100"
+                  className="w-full p-2 bg-white/50 rounded-xl outline-none text-base font-bold text-gray-700 border border-gray-100"
                 />
               </div>
             </div>

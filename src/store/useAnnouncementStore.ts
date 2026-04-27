@@ -39,7 +39,9 @@ export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
         
         // Auto-delete if expired
         if (ann.displayUntil && new Date(ann.displayUntil) < now) {
-          deleteDoc(doc(db, 'announcements', ann.id)).catch(console.error);
+          if (ann.id && typeof ann.id === 'string' && ann.id.trim().length > 0) {
+            deleteDoc(doc(db, 'announcements', ann.id)).catch(console.error);
+          }
         } else {
           activeAnnouncements.push(ann);
         }
@@ -59,6 +61,7 @@ export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
     });
   },
   markAsSeen: async (id, userId) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
     const { announcements } = get();
     const ann = announcements.find(a => a.id === id);
     if (!ann) return;
@@ -69,6 +72,7 @@ export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
     }
   },
   hideAnnouncement: async (id, userId) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
     const { announcements } = get();
     const ann = announcements.find(a => a.id === id);
     if (!ann) return;
@@ -79,6 +83,7 @@ export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
     }
   },
   deleteAnnouncement: async (id) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
     await deleteDoc(doc(db, 'announcements', id));
   }
 }));

@@ -37,6 +37,21 @@ service cloud.firestore {
       }
     }
 
+    // --- Shift Management Collections ---
+    match /stores/{storeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /staffs/{staffId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /shift_requests/{requestId} {
+      allow read, write: if isSignedIn();
+    }
+
     // --- Reports Collection ---
     match /reports/{reportId} {
       allow read, write: if isSignedIn();

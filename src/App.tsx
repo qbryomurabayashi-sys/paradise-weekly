@@ -10,6 +10,8 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { CalendarView } from './pages/CalendarView';
 import { ProjectsView } from './pages/ProjectsView';
 import { PostAnnouncement } from './pages/PostAnnouncement';
+import { ShiftDashboard } from './pages/ShiftDashboard';
+import { StaffShiftRequest } from './pages/StaffShiftRequest';
 import { useAuthStore } from './store/useAuthStore';
 import { useReportStore } from './store/useReportStore';
 import { useNotificationStore } from './store/useNotificationStore';
@@ -70,7 +72,7 @@ const Header = () => {
   };
 
   return (
-    <header className="p-6 flex justify-between items-center max-w-5xl w-full mx-auto z-50">
+    <header className="p-4 sm:p-6 flex justify-between items-center max-w-5xl w-full mx-auto z-50">
       <div className="flex items-center gap-3 relative">
         <div className="relative">
           <button 
@@ -101,6 +103,12 @@ const Header = () => {
                     <Sparkles size={20} className="text-paradise-ocean" /> お知らせ作成
                   </Link>
                 )}
+                <Link to="/shift" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Calendar size={20} className="text-blue-500" /> シフト・稼働
+                </Link>
+                <Link to="/shift/request" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Calendar size={20} className="text-paradise-ocean" /> 希望休の提出
+                </Link>
                 <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <Calendar size={20} /> カレンダー
                 </Link>
@@ -144,12 +152,12 @@ const Header = () => {
               initial={{ opacity: 0, scale: 0.9, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 10 }}
-              className="absolute top-14 right-0 w-80 max-h-[400px] overflow-y-auto no-scrollbar bg-white/95 backdrop-blur-xl border border-white/50 rounded-3xl p-4 shadow-2xl space-y-3 z-50 text-left"
+              className="absolute top-14 right-0 w-[90vw] sm:w-80 max-h-[400px] overflow-y-auto no-scrollbar bg-white/95 backdrop-blur-xl border border-white/50 rounded-3xl p-4 shadow-2xl space-y-3 z-50 text-left"
             >
               <div className="flex justify-between items-center mb-2 px-1">
-                <h3 className="text-sm font-black text-gray-800 flex items-center gap-2"><Bell size={16}/> 通知</h3>
+                <h3 className="text-base font-black text-gray-800 flex items-center gap-2"><Bell size={16}/> 通知</h3>
                 {unreadCount > 0 && (
-                  <button onClick={() => user && markAllAsRead(user.uid)} className="text-[10px] text-paradise-ocean font-bold flex items-center gap-1 hover:underline">
+                  <button onClick={() => user && markAllAsRead(user.uid)} className="text-xs text-paradise-ocean font-bold flex items-center gap-1 hover:underline">
                     <CheckCircle size={10} /> すべて既読にする
                   </button>
                 )}
@@ -158,7 +166,7 @@ const Header = () => {
               {notifications.filter(n => !n.isRead).length === 0 ? (
                 <div className="text-center py-6">
                   <Bell size={24} className="mx-auto text-gray-300 mb-2" />
-                  <p className="text-gray-400 font-bold text-xs">新しい通知はありません</p>
+                  <p className="text-gray-400 font-bold text-sm">新しい通知はありません</p>
                 </div>
               ) : (
                 notifications.filter(n => !n.isRead).map((notif) => (
@@ -171,10 +179,10 @@ const Header = () => {
                       {notif.type === 'comment' ? <MessageCircle size={14} /> : <Heart size={14} />}
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs text-gray-800 leading-snug">
+                      <p className="text-sm text-gray-800 leading-snug">
                          <span className="font-black">{notif.message}</span>
                       </p>
-                      <span className="text-[9px] font-bold text-gray-400 mt-1 block">
+                      <span className="text-[10px] font-bold text-gray-400 mt-1 block">
                         {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
@@ -227,7 +235,7 @@ export default function App() {
         <div className="glass p-10 rounded-[3rem] border-2 border-white/40 space-y-6 max-w-sm">
           <div className="text-6xl mb-4">⚠️</div>
           <h2 className="text-2xl font-black text-gray-800">ブラウザを変更してください</h2>
-          <p className="text-sm text-gray-600 font-bold leading-relaxed">
+          <p className="text-base text-gray-600 font-bold leading-relaxed">
             LINE内ブラウザではログインが正しく動作しない場合があります。<br/><br/>
             画面右上のメニュー（︙）から<br/>
             <span className="text-paradise-sunset font-black">「デフォルトのブラウザで開く」</span><br/>
@@ -260,13 +268,13 @@ export default function App() {
            </motion.div>
            <div className="space-y-2">
              <h1 className="text-3xl font-black text-gray-800 tracking-[0.2em] uppercase drop-shadow-sm">Paradise</h1>
-             <p className="text-xs font-black text-paradise-sunset tracking-[0.4em] uppercase">Weekly Report</p>
+             <p className="text-sm font-black text-paradise-sunset tracking-[0.4em] uppercase">Weekly Report</p>
            </div>
            <motion.p 
              initial={{ opacity: 0, y: 10 }}
              animate={{ opacity: 1, y: 0 }}
              transition={{ delay: 1 }}
-             className="text-[10px] font-bold text-gray-400 mt-10 italic"
+             className="text-xs font-bold text-gray-400 mt-10 italic"
            >
              今日も素晴らしい一日になりますように
            </motion.p>
@@ -315,6 +323,8 @@ export default function App() {
               <Route path="/profile/edit" element={<ProfileEdit />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/calendar" element={<CalendarView />} />
+              <Route path="/shift" element={<ShiftDashboard />} />
+              <Route path="/shift/request" element={<StaffShiftRequest />} />
               <Route path="/projects" element={<ProjectsView />} />
               <Route path="/post-announcement" element={<PostAnnouncement />} />
             </Routes>

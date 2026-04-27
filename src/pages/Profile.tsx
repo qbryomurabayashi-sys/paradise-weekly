@@ -63,10 +63,10 @@ export const Profile = () => {
           <div className="text-center mt-6 space-y-2">
             <h2 className="text-3xl font-black text-gray-800 tracking-tight">{user.name}</h2>
             <div className="flex flex-wrap justify-center gap-2">
-              <span className="text-paradise-ocean font-black text-[10px] bg-paradise-blue/30 px-4 py-1.5 rounded-full uppercase tracking-[0.2em] shadow-sm border border-white/20">
+              <span className="text-paradise-ocean font-black text-xs bg-paradise-blue/30 px-4 py-1.5 rounded-full uppercase tracking-[0.2em] shadow-sm border border-white/20">
                 {user.role}
               </span>
-              <span className="flex items-center gap-1 text-gray-400 font-bold text-[10px] bg-white/40 px-3 py-1.5 rounded-full border border-white/20">
+              <span className="flex items-center gap-1 text-gray-400 font-bold text-xs bg-white/40 px-3 py-1.5 rounded-full border border-white/20">
                 <MapPin size={10} /> {user.storeName}
               </span>
             </div>
@@ -80,11 +80,11 @@ export const Profile = () => {
         <div className="grid grid-cols-2 gap-4">
           <GlassCard hoverEffect={true} className="text-center p-8 border-none bg-gradient-to-br from-white/40 to-white/10">
              <div className="text-2xl font-black text-gray-800">{stats.reportCount}</div>
-             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">週報数</div>
+             <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">週報数</div>
           </GlassCard>
           <GlassCard hoverEffect={true} className="text-center p-8 border-none bg-gradient-to-br from-white/40 to-white/10">
              <div className="text-2xl font-black text-gray-800">{stats.reactionCount}</div>
-             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">もらったリアクション</div>
+             <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">もらったリアクション</div>
           </GlassCard>
         </div>
       )}
@@ -115,7 +115,7 @@ export const Profile = () => {
           <div className="pt-6 px-3">
             <button 
               onClick={() => navigate('/admin')}
-              className="w-full flex items-center justify-center gap-3 p-5 text-paradise-sunset bg-paradise-sunset/10 rounded-[2rem] border border-paradise-sunset/20 hover:bg-paradise-sunset/20 transition-all font-black uppercase text-xs tracking-[0.2em] shadow-lg"
+              className="w-full flex items-center justify-center gap-3 p-5 text-paradise-sunset bg-paradise-sunset/10 rounded-[2rem] border border-paradise-sunset/20 hover:bg-paradise-sunset/20 transition-all font-black uppercase text-sm tracking-[0.2em] shadow-lg"
             >
               <Zap size={18} />
               管理者ダッシュボード
@@ -126,7 +126,7 @@ export const Profile = () => {
         <div className="pt-6 px-3">
           <button 
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-3 p-5 text-red-500 bg-red-50/40 rounded-[2rem] border border-red-100/40 hover:bg-red-100/60 transition-all font-black uppercase text-xs tracking-[0.2em] shadow-lg shadow-red-100/20"
+            className="w-full flex items-center justify-center gap-3 p-5 text-red-500 bg-red-50/40 rounded-[2rem] border border-red-100/40 hover:bg-red-100/60 transition-all font-black uppercase text-sm tracking-[0.2em] shadow-lg shadow-red-100/20"
           >
             <LogOut size={18} />
             ログアウト
@@ -134,7 +134,7 @@ export const Profile = () => {
         </div>
       </GlassCard>
       
-      <p className="text-center text-[10px] text-white/50 font-black uppercase tracking-[0.4em] py-10">
+      <p className="text-center text-xs text-white/50 font-black uppercase tracking-[0.4em] py-10">
         週次報告 バージョン 1.0.0
       </p>
     </div>
