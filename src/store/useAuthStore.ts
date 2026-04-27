@@ -30,6 +30,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setViewMode: (mode) => set({ viewMode: mode }),
   login: async (id: string, password: string) => {
     try {
+      sessionStorage.removeItem('session_last_login_recorded');
       const email = `${id}@paradise-weekly.app`;
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {
@@ -39,6 +40,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   logout: async () => {
     await signOut(auth);
+    sessionStorage.removeItem('session_last_login_recorded');
   },
   
   updateUserRole: async (targetUserId: string, newRole: '店長' | 'AM' | 'BM') => {
@@ -66,6 +68,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString()
           });
+          sessionStorage.setItem('session_last_login_recorded', 'true');
           userDoc = await getDoc(doc(db, 'users', user.uid));
         } else {
           // Update last login time once per session

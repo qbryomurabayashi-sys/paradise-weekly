@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { useReportStore } from '../store/useReportStore';
 import { db } from '../lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -22,10 +23,12 @@ interface AppUser {
     role: '店長' | 'AM' | 'BM';
     storeName: string;
     lastLoginAt?: string;
+    createdAt?: string;
 }
 
 export const AdminDashboard = () => {
     const { user, updateUserRole } = useAuthStore();
+    const { reports, init } = useReportStore();
     const [users, setUsers] = useState<AppUser[]>([]);
     const [newUserId, setNewUserId] = useState('');
     const [newUserName, setNewUserName] = useState('');
@@ -49,6 +52,11 @@ export const AdminDashboard = () => {
         }
         fetchUsers();
     }, [user, navigate]);
+
+    useEffect(() => {
+        const unsub = init();
+        return () => unsub();
+    }, [init]);
 
     const handleRoleChange = async (uid: string, newRole: '店長' | 'AM' | 'BM') => {
         try {
@@ -145,7 +153,12 @@ export const AdminDashboard = () => {
 
             <div className="space-y-4 mt-8">
                 <h3 className="font-bold text-gray-600">登録済みユーザー一覧</h3>
-                {users.map(u => (
+                {users.map(u => {
+                    const userReports = reports.filter(r => r.authorId === u.uid);
+                    const latestReportDate = userReports.length > 0 ? userReports.reduce((latest, r) => new Date(r.createdAt).getTime() > new Date(latest).getTime() ? r.createdAt : latest, userReports[0].createdAt) : null;
+                    const fallbackDate = latestReportDate || u.createdAt;
+
+                    return (
                     <GlassCard key={u.uid} className="p-4 flex items-center justify-between">
                         <div>
                             <p className="font-bold">{u.name}</p>
@@ -153,6 +166,8 @@ export const AdminDashboard = () => {
                             {(u.role === 'AM' || u.role === '店長') && (
                                 u.lastLoginAt ? (
                                     <p className="text-sm text-blue-500 mt-1">最終ログイン: {formatDistanceToNow(new Date(u.lastLoginAt), { addSuffix: true, locale: ja })}</p>
+                                ) : fallbackDate ? (
+                                    <p className="text-sm text-gray-500 mt-1">最終ログイン: {formatDistanceToNow(new Date(fallbackDate), { addSuffix: true, locale: ja })} (推測)</p>
                                 ) : (
                                     <p className="text-sm text-gray-400 mt-1">ログイン履歴なし</p>
                                 )
@@ -168,7 +183,7 @@ export const AdminDashboard = () => {
                             <option value="BM">BM</option>
                         </select>
                     </GlassCard>
-                ))}
+                )})}
             </div>
         </div>
     );
