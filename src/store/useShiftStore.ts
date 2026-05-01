@@ -14,6 +14,7 @@ export interface Store {
   };
   closedDaysOfWeek?: number[];
   closedDates?: string[];
+  createdAt?: number;
 }
 
 export interface Staff {
@@ -74,7 +75,38 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
     set({ isLoading: true });
     const q = query(collection(db, 'stores'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const stores = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
+      let stores = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
+      
+      const STORE_ORDER = [
+        '京急横浜駅北口',
+        'イトーヨーカドー横浜別所',
+        'アピタ金沢文庫',
+        'オーケーみなとみらい',
+        'ヨークフーズ上大岡',
+        'ウィング久里浜',
+        'コースカベイサイドストアーズ',
+        '横浜市役所',
+        'サミット横浜岡野',
+        'ビーンズ保土ヶ谷'
+      ];
+
+      stores.sort((a, b) => {
+        const indexA = STORE_ORDER.indexOf(a.name);
+        const indexB = STORE_ORDER.indexOf(b.name);
+        
+        // If both are found in the order array, sort by their index
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        // If only A is found, it comes first
+        if (indexA !== -1) return -1;
+        // If only B is found, it comes first
+        if (indexB !== -1) return 1;
+        // If neither is found, sort by createdAt (older first), falling back to localeCompare if createdAt missing
+        if (a.createdAt && b.createdAt) return a.createdAt - b.createdAt;
+        if (a.createdAt) return 1; // b is older (since it doesn't have createdAt, it existed before)
+        if (b.createdAt) return -1; // a is older
+        return a.name.localeCompare(b.name, 'ja');
+      });
+
       set({ stores, isLoading: false });
     });
     return unsubscribe;
@@ -119,6 +151,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
 
   saveStore: async (store: Store) => {
     if (!store.id) store.id = doc(collection(db, 'stores')).id;
+    if (!store.createdAt) store.createdAt = Date.now();
     await setDoc(doc(db, 'stores', store.id), store);
   },
 

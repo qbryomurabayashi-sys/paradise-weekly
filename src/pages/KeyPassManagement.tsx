@@ -4,7 +4,7 @@ import { useShiftStore } from '../store/useShiftStore';
 import { db } from '../lib/firebase';
 import { collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { GlassCard } from '../components/ui/GlassCard';
-import { Key, ShieldCheck, Mail, Lock, AlertTriangle, CheckCircle, ChevronLeft, Stars, Camera } from 'lucide-react';
+import { Key, ShieldCheck, Mail, Lock, AlertTriangle, CheckCircle, ChevronLeft, ChevronDown, Stars, Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Possession {
@@ -46,6 +46,7 @@ export const KeyPassManagement = () => {
   const [storeInputs, setStoreInputs] = useState<Record<string, string>>({});
   const [staffTab, setStaffTab] = useState<'registered' | 'unregistered'>('registered');
   const [mainTab, setMainTab] = useState<'list' | 'edit' | 'store'>('list');
+  const [expandedStores, setExpandedStores] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubStores = initStores();
@@ -495,93 +496,143 @@ export const KeyPassManagement = () => {
               );
             }
 
-            return filteredStaffs.map((staff) => {
-               const record = records.find(r => r.id === staff.id);
-               const isAlert = getAlertStatus(record);
+            const toggleStoreAccordion = (storeId: string) => {
+              setExpandedStores(prev => 
+                 prev.includes(storeId) ? prev.filter(id => id !== storeId) : [...prev, storeId]
+              );
+            };
+
+            const groupedStaffs = filteredStaffs.reduce((acc, staff) => {
+              const store = stores.find(s => s.id === staff.storeId);
+              const storeName = store ? store.name : '所属店舗なし';
+              const sId = store ? store.id : 'unassigned';
+              if (!acc[sId]) acc[sId] = { name: storeName, staffs: [] };
+              acc[sId].staffs.push(staff);
+              return acc;
+            }, {} as Record<string, { name: string, staffs: typeof staffs }>);
+
+            const groupedStaffsArray = Object.entries(groupedStaffs).sort(([storeIdA], [storeIdB]) => {
+              if (storeIdA === 'unassigned') return 1;
+              if (storeIdB === 'unassigned') return -1;
+              const indexA = stores.findIndex(s => s.id === storeIdA);
+              const indexB = stores.findIndex(s => s.id === storeIdB);
+              return (indexA !== -1 ? indexA : Infinity) - (indexB !== -1 ? indexB : Infinity);
+            });
+
+            return groupedStaffsArray.map(([storeId, group]) => {
+               const isExpanded = expandedStores.includes(storeId);
                
                return (
-                 <div key={staff.id} 
-                      className={`p-4 rounded-2xl border-2 transition-all shadow-sm flex flex-col gap-4 cursor-pointer hover:scale-[1.01] ${isAlert ? 'bg-red-50/50 border-red-200' : 'bg-white border-white/40'} ${selectedStaffId === staff.id ? 'ring-2 ring-paradise-ocean' : ''}`}
-                      onClick={() => {
-                          if (!isBM) {
-                            setSelectedStaffId(staff.id);
-                            setMainTab('edit');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }
-                      }}
-                 >
-                 <div className="w-full">
-                   <div className="flex items-center gap-3">
-                     <h4 className="font-bold text-gray-800 text-lg">{staff.lastName} {staff.firstName} <span className="text-xs text-gray-400 font-normal">({staff.employmentType === 'parttime' ? 'パート' : '正社員'})</span></h4>
-                     {isAlert && (
-                       <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-md animate-pulse">
-                         <AlertTriangle size={14} /> 1ヶ月未確認
+                 <div key={storeId} className="bg-white/80 rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                   <div 
+                     className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                     onClick={() => toggleStoreAccordion(storeId)}
+                   >
+                     <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                       {group.name}
+                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-medium">
+                         {group.staffs.length}名
                        </span>
-                     )}
+                     </h4>
+                     <ChevronDown className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} size={20} />
                    </div>
-                   <div className="flex flex-col gap-2 mt-3 w-full">
-                     {record?.possessions?.map((p, i) => (
-                       <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-gray-50/80 px-3 py-2.5 rounded-xl border border-gray-100 w-full">
-                         <div className="flex flex-wrap items-center gap-2">
-                           {getTypeIcon(p.type)}
-                           <span className="text-sm font-bold text-gray-700">{p.storeName} <span className="text-xs text-gray-500">({translateType(p.type)})</span></span>
-                           {p.lastCheckedAt && (
-                             <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-medium whitespace-nowrap">
-                               {p.checkMethod === 'photo' ? '写真' : p.checkMethod === 'physical' ? '現物' : ''} {new Date(p.lastCheckedAt).toLocaleDateString()}
-                               {p.lastCheckedByName && ` (確認者: ${p.lastCheckedByName})`}
-                             </span>
-                           )}
-                         </div>
-                         {!isBM && staffTab === 'registered' && (
-                           <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
-                             <button
-                               onClick={async (e) => {
-                                 e.stopPropagation();
-                                 try {
-                                   const now = new Date().toISOString();
-                                   const newPossessions = [...(record?.possessions || [])];
-                                   newPossessions[i] = { ...p, lastCheckedAt: now, checkMethod: 'photo', lastCheckedByName: user?.name };
-                                   await setDoc(doc(db, 'key_passes', staff.id), {
-                                     userName: `${staff.lastName} ${staff.firstName}`,
-                                     possessions: newPossessions,
-                                     lastCheckedAt: now
-                                   }, { merge: true });
-                                 } catch (err) {
-                                   console.error(err);
-                                 }
-                               }}
-                               className="flex-1 sm:flex-none justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-blue-200 shadow-sm flex items-center gap-1"
+                   
+                   {isExpanded && (
+                     <div className="p-4 pt-0 grid gap-4 border-t border-gray-100 bg-gray-50/30">
+                       <div className="mt-4 grid gap-4">
+                         {group.staffs.map((staff) => {
+                           const record = records.find(r => r.id === staff.id);
+                           const isAlert = getAlertStatus(record);
+                           
+                           return (
+                             <div key={staff.id} 
+                                  className={`p-4 rounded-2xl border-2 transition-all shadow-sm flex flex-col gap-4 cursor-pointer hover:scale-[1.01] ${isAlert ? 'bg-red-50/50 border-red-200' : 'bg-white border-white/40'} ${selectedStaffId === staff.id ? 'ring-2 ring-paradise-ocean' : ''}`}
+                                  onClick={() => {
+                                      if (!isBM) {
+                                        setSelectedStaffId(staff.id);
+                                        setMainTab('edit');
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                      }
+                                  }}
                              >
-                               <Camera size={14}/> 写真確認
-                             </button>
-                             <button
-                               onClick={async (e) => {
-                                 e.stopPropagation();
-                                 try {
-                                   const now = new Date().toISOString();
-                                   const newPossessions = [...(record?.possessions || [])];
-                                   newPossessions[i] = { ...p, lastCheckedAt: now, checkMethod: 'physical', lastCheckedByName: user?.name };
-                                   await setDoc(doc(db, 'key_passes', staff.id), {
-                                     userName: `${staff.lastName} ${staff.firstName}`,
-                                     possessions: newPossessions,
-                                     lastCheckedAt: now
-                                   }, { merge: true });
-                                 } catch (err) {
-                                   console.error(err);
-                                 }
-                               }}
-                               className="flex-1 sm:flex-none justify-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-emerald-200 shadow-sm flex items-center gap-1"
-                             >
-                               <CheckCircle size={14}/> 現物確認
-                             </button>
+                             <div className="w-full">
+                               <div className="flex items-center gap-3">
+                                 <h4 className="font-bold text-gray-800 text-lg">{staff.lastName} {staff.firstName} <span className="text-xs text-gray-400 font-normal">({staff.employmentType === 'parttime' ? 'パート' : '正社員'})</span></h4>
+                                 {isAlert && (
+                                   <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-md animate-pulse">
+                                     <AlertTriangle size={14} /> 1ヶ月未確認
+                                   </span>
+                                 )}
+                               </div>
+                               <div className="flex flex-col gap-2 mt-3 w-full">
+                                 {record?.possessions?.map((p, i) => (
+                                   <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-gray-50/80 px-3 py-2.5 rounded-xl border border-gray-100 w-full">
+                                     <div className="flex flex-wrap items-center gap-2">
+                                       {getTypeIcon(p.type)}
+                                       <span className="text-sm font-bold text-gray-700">{p.storeName} <span className="text-xs text-gray-500">({translateType(p.type)})</span></span>
+                                       {p.lastCheckedAt && (
+                                         <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-medium whitespace-nowrap">
+                                           {p.checkMethod === 'photo' ? '写真' : p.checkMethod === 'physical' ? '現物' : ''} {new Date(p.lastCheckedAt).toLocaleDateString()}
+                                           {p.lastCheckedByName && ` (確認者: ${p.lastCheckedByName})`}
+                                         </span>
+                                       )}
+                                     </div>
+                                     {!isBM && staffTab === 'registered' && (
+                                       <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
+                                         <button
+                                           onClick={async (e) => {
+                                             e.stopPropagation();
+                                             try {
+                                               const now = new Date().toISOString();
+                                               const newPossessions = [...(record?.possessions || [])];
+                                               newPossessions[i] = { ...p, lastCheckedAt: now, checkMethod: 'photo', lastCheckedByName: user?.name };
+                                               await setDoc(doc(db, 'key_passes', staff.id), {
+                                                 userName: `${staff.lastName} ${staff.firstName}`,
+                                                 possessions: newPossessions,
+                                                 lastCheckedAt: now
+                                               }, { merge: true });
+                                             } catch (err) {
+                                               console.error(err);
+                                             }
+                                           }}
+                                           className="flex-1 sm:flex-none justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-blue-200 shadow-sm flex items-center gap-1"
+                                         >
+                                           <Camera size={14}/> 写真確認
+                                         </button>
+                                         <button
+                                           onClick={async (e) => {
+                                             e.stopPropagation();
+                                             try {
+                                               const now = new Date().toISOString();
+                                               const newPossessions = [...(record?.possessions || [])];
+                                               newPossessions[i] = { ...p, lastCheckedAt: now, checkMethod: 'physical', lastCheckedByName: user?.name };
+                                               await setDoc(doc(db, 'key_passes', staff.id), {
+                                                 userName: `${staff.lastName} ${staff.firstName}`,
+                                                 possessions: newPossessions,
+                                                 lastCheckedAt: now
+                                               }, { merge: true });
+                                             } catch (err) {
+                                               console.error(err);
+                                             }
+                                           }}
+                                           className="flex-1 sm:flex-none justify-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-emerald-200 shadow-sm flex items-center gap-1"
+                                         >
+                                           <CheckCircle size={14}/> 現物確認
+                                         </button>
+                                       </div>
+                                     )}
+                                   </div>
+                                 )) || <span className="text-xs text-gray-400">所持品なし</span>}
+                               </div>
+                             </div>
                            </div>
-                         )}
+                           );
+                         })}
                        </div>
-                     )) || <span className="text-xs text-gray-400">所持品なし</span>}
-                   </div>
+                     </div>
+                   )}
                  </div>
-               </div>
-             );
+               );
             });
           })()}
         </div>
