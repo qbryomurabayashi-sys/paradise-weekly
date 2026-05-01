@@ -59,41 +59,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   init: () => {
     onAuthStateChanged(auth, async (user) => {
       if (user) {
-        let userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (!userDoc.exists()) {
-          console.log('Initializing new user in Firestore for', user.uid);
-          await setDoc(doc(db, 'users', user.uid), {
-            role: '店長',
-            storeName: '未設定の店舗',
-            createdAt: new Date().toISOString(),
-            lastLoginAt: new Date().toISOString()
-          });
-          sessionStorage.setItem('session_last_login_recorded', 'true');
-          userDoc = await getDoc(doc(db, 'users', user.uid));
-        } else {
-          // Update last login time once per session
-          if (!sessionStorage.getItem('session_last_login_recorded')) {
-            await updateDoc(doc(db, 'users', user.uid), {
+        try {
+          let userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (!userDoc.exists()) {
+            console.log('Initializing new user in Firestore for', user.uid);
+            await setDoc(doc(db, 'users', user.uid), {
+              role: '店長',
+              storeName: '未設定の店舗',
+              createdAt: new Date().toISOString(),
               lastLoginAt: new Date().toISOString()
             });
             sessionStorage.setItem('session_last_login_recorded', 'true');
+            userDoc = await getDoc(doc(db, 'users', user.uid));
+          } else {
+            // Update last login time once per session
+            if (!sessionStorage.getItem('session_last_login_recorded')) {
+              await updateDoc(doc(db, 'users', user.uid), {
+                lastLoginAt: new Date().toISOString()
+              });
+              sessionStorage.setItem('session_last_login_recorded', 'true');
+            }
           }
-        }
 
-        const userData = userDoc.exists() ? userDoc.data() : null;
-        
-        set({ 
-          isAuthenticated: true, 
-          user: userData ? { 
-            name: userData.name || user.email?.split('@')[0] || '匿名', 
-            role: userData.role, 
-            storeName: userData.storeName, 
-            uid: user.uid,
-            photoURL: userData.photoURL
-          } : null
-        });
-      }
- else {
+          const userData = userDoc.exists() ? userDoc.data() : null;
+          
+          set({ 
+            isAuthenticated: true, 
+            user: userData ? { 
+              name: userData.name || user.email?.split('@')[0] || '匿名', 
+              role: userData.role, 
+              storeName: userData.storeName, 
+              uid: user.uid,
+              photoURL: userData.photoURL
+            } : null
+          });
+        } catch (err) {
+          console.error("Firestore authentication init error:", err);
+          // Fallback if we can't reach Firestore but we know who is logged in
+          set({
+            isAuthenticated: true,
+            user: {
+              name: user.email?.split('@')[0] || '匿名',
+              role: '店長', // Fallback role
+              storeName: '接続エラー (リロードしてください)',
+              uid: user.uid,
+            }
+          });
+        }
+      } else {
         set({ isAuthenticated: false, user: null });
       }
     });

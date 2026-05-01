@@ -284,6 +284,23 @@ export const useReportStore = create<ReportState>((set) => ({
       if (!readBy.includes(userId)) {
         readBy.push(userId);
         await updateDoc(reportRef, { readBy });
+        
+        // Notify Author
+        if (data.authorId !== userId) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userName = userDoc.exists() ? userDoc.data()?.name || '誰か' : '誰か';
+            await addDoc(collection(db, 'users', data.authorId, 'notifications'), {
+               type: 'read',
+               fromUserId: userId,
+               fromUserName: userName,
+               reportId: reportId,
+               message: `${userName}さんがあなたのレポートを「見たよ」しました`,
+               isRead: false,
+               createdAt: new Date().toISOString()
+            });
+          } catch(e) { console.error('notify seen error', e); }
+        }
       }
     } catch (error) {
       console.error('Failed to mark as read', error);

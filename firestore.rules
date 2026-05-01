@@ -67,6 +67,17 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // --- Key/Pass Collection ---
+    match /key_passes/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /store_key_passes/{storeId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
     // --- Tasks / Calendar Collection ---
     match /tasks/{taskId} {
       allow read, write: if isSignedIn();

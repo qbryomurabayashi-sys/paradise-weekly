@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { useAuthStore } from '../store/useAuthStore';
-import Editor from 'react-simple-wysiwyg';
 import { Megaphone, Send, ChevronLeft, BellRing } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Editor from 'react-simple-wysiwyg';
 
 export const PostAnnouncement = () => {
   const { user } = useAuthStore();

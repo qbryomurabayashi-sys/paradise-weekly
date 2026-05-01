@@ -366,21 +366,7 @@ export const StaffShiftRequest = () => {
                             })}
                         </select>
                         {selectedStaffId && (
-                            <div className="flex justify-end mt-3">
-                                <button
-                                    onClick={() => {
-                                        const dateStr = format(monthStart, 'yyyy-MM-01');
-                                        setDraftRequests(prev => ({
-                                            ...prev,
-                                            [selectedStaffId]: {
-                                                [dateStr]: '希望休なし'
-                                            }
-                                        }));
-                                    }}
-                                    className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-bold rounded-xl border border-gray-200 hover:bg-gray-200 transition"
-                                >
-                                    「今月は希望休なし」として一括送信リストに追加
-                                </button>
+                            <div className="mt-4 hidden">
                             </div>
                         )}
                     </div>
@@ -417,6 +403,23 @@ export const StaffShiftRequest = () => {
                                     {type}
                                 </button>
                             ))}
+                        </div>
+
+                        <div className="mb-4">
+                            <button
+                                onClick={() => {
+                                    const dateStr = format(monthStart, 'yyyy-MM-01');
+                                    setDraftRequests(prev => ({
+                                        ...prev,
+                                        [selectedStaffId]: {
+                                            [dateStr]: '希望休なし'
+                                        }
+                                    }));
+                                }}
+                                className="w-full py-3 bg-blue-50 text-blue-600 text-base font-black rounded-xl border-2 border-blue-200 hover:bg-blue-100 transition-all flex items-center justify-center gap-2 shadow-sm"
+                            >
+                                「今月は希望休なし」として一括送信リストに追加
+                            </button>
                         </div>
                         
                         <p className="text-xs text-gray-400 font-bold mb-4 bg-blue-50/50 p-2 rounded-lg leading-relaxed text-center">
@@ -560,19 +563,30 @@ export const StaffShiftRequest = () => {
                     </div>
                 )}
 
-                <button 
-                    onClick={handleSubmitAll}
-                    disabled={!hasAnyChanges || isSubmitting}
-                    className={`w-full py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-md
-                        ${!hasAnyChanges || isSubmitting
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none' 
-                            : 'bg-gradient-to-r from-paradise-ocean to-paradise-blue text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
-                        }
-                    `}
-                >
-                    {isSubmitting ? '処理中...' : hasAnyChanges ? '全スタッフ分を一括申請する' : '変更がありません'}
-                    {hasAnyChanges && !isSubmitting && <CheckCircle size={20} />}
-                </button>
+                <div className="flex gap-2">
+                    {hasAnyChanges && (
+                        <button 
+                            onClick={() => setDraftRequests({})}
+                            disabled={isSubmitting}
+                            className="px-4 py-4 rounded-xl font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors whitespace-nowrap"
+                        >
+                            リセット
+                        </button>
+                    )}
+                    <button 
+                        onClick={handleSubmitAll}
+                        disabled={!hasAnyChanges || isSubmitting}
+                        className={`flex-1 py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-md
+                            ${!hasAnyChanges || isSubmitting
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none' 
+                                : 'bg-gradient-to-r from-paradise-ocean to-paradise-blue text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
+                            }
+                        `}
+                    >
+                        {isSubmitting ? '処理中...' : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
+                        {hasAnyChanges && !isSubmitting && <CheckCircle size={20} />}
+                    </button>
+                </div>
             </div>
         </div>
     );

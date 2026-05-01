@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { db } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 export interface Announcement {
   id: string;
@@ -69,6 +69,25 @@ export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
     if (!ann.seenBy?.includes(userId)) {
       const newSeenBy = [...(ann.seenBy || []), userId];
       await updateDoc(doc(db, 'announcements', id), { seenBy: newSeenBy });
+
+      // Notify Author
+      if (ann.authorId && ann.authorId !== userId) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', userId));
+          const userName = userDoc.exists() ? userDoc.data()?.name || '誰か' : '誰か';
+          await addDoc(collection(db, 'users', ann.authorId, 'notifications'), {
+              type: 'read_announcement',
+              fromUserId: userId,
+              fromUserName: userName,
+              reportId: id, // reuse reportId field for navigation or linking
+              message: `${userName}さんがあなたのお知らせを「見たよ」しました`,
+              isRead: false,
+              createdAt: new Date().toISOString()
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
   },
   hideAnnouncement: async (id, userId) => {

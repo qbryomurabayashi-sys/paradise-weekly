@@ -17,11 +17,12 @@ interface AppUser {
 }
 
 export const CalendarView = () => {
-  const { user } = useAuthStore();
+  const { user, viewMode } = useAuthStore();
   const [tasks, setTasks] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
+  const [description, setDescription] = useState('');
   const [selectedAssignees, setSelectedAssignees] = useState<AppUser[]>([]);
   
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -42,13 +43,16 @@ export const CalendarView = () => {
     await addDoc(collection(db, 'tasks'), {
       title,
       date,
+      description,
       assignees: selectedAssignees.map(u => ({ uid: u.uid, name: u.name })),
       authorId: user?.uid,
+      authorRole: user?.role,
       createdAt: new Date().toISOString()
     });
     setShowForm(false);
     setTitle('');
     setDate('');
+    setDescription('');
     setSelectedAssignees([]);
   };
 
@@ -79,7 +83,7 @@ export const CalendarView = () => {
         const cloneDay = day;
         
         // Find tasks for this day
-        const dayTasks = tasks.filter(t => t.date === format(cloneDay, 'yyyy-MM-dd'));
+        const dayTasks = validTasks.filter(t => t.date === format(cloneDay, 'yyyy-MM-dd'));
 
         days.push(
           <div
@@ -129,9 +133,21 @@ export const CalendarView = () => {
     return <div className="grid grid-cols-7 rounded-t-2xl overflow-hidden border-b border-gray-100">{days}</div>;
   };
 
+  const isBM = user?.role === 'BM';
+  const activeRole = isBM && viewMode ? viewMode : user?.role;
+
+  const validTasks = tasks.filter(t => {
+    if (t.authorRole === 'AM') {
+      if (activeRole === 'AM' || activeRole === 'BM') return true;
+      if (t.assignees?.some((a: any) => a.uid === user?.uid)) return true;
+      return false;
+    }
+    return true;
+  });
+
   const tasksToDisplay = selectedDate 
-    ? tasks.filter(t => t.date === format(selectedDate, 'yyyy-MM-dd'))
-    : tasks.filter(t => new Date(t.date) >= new Date(new Date().setHours(0,0,0,0))); // upcoming
+    ? validTasks.filter(t => t.date === format(selectedDate, 'yyyy-MM-dd'))
+    : validTasks.filter(t => new Date(t.date) >= new Date(new Date().setHours(0,0,0,0))); // upcoming
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pt-6 pb-24 px-4 flex flex-col md:flex-row gap-6">
@@ -189,6 +205,15 @@ export const CalendarView = () => {
                    <MultiUserSelect selectedUsers={selectedAssignees} onChange={setSelectedAssignees} placeholder="担当者を選択" />
                  </div>
                </div>
+               <div>
+                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">詳細・備考</label>
+                 <textarea 
+                   value={description} 
+                   onChange={(e)=>setDescription(e.target.value)} 
+                   className="w-full p-2 border rounded-xl outline-none focus:border-paradise-ocean text-sm h-16 resize-none" 
+                   placeholder="任意"
+                 />
+               </div>
                <button onClick={handleAddTask} className="w-full bg-paradise-mint text-white py-2 rounded-xl font-bold text-base shadow-md mt-2">登録</button>
             </motion.div>
           )}
@@ -203,13 +228,16 @@ export const CalendarView = () => {
             tasksToDisplay.map(task => (
               <GlassCard key={task.id} className="p-4 border-l-4 border-l-paradise-mint flex flex-col gap-2">
                 <div className="flex justify-between items-start">
-                  <h4 className="font-bold text-gray-800 text-base leading-tight">{task.title}</h4>
+                  <h4 className="font-bold text-gray-800 text-base leading-tight pr-6">{task.title}</h4>
                   {(user?.role === 'BM' || user?.role === 'AM' || task.authorId === user?.uid) && (
                     <button onClick={() => handleDelete(task.id)} className="text-gray-400 hover:text-red-500 bg-white/50 p-1.5 rounded-full transition-all active:scale-95 shadow-sm -mr-1">
                       <X size={14} />
                     </button>
                   )}
                 </div>
+                {task.description && (
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{task.description}</p>
+                )}
                 <div className="flex items-center gap-2 text-xs font-bold text-gray-500 overflow-x-auto no-scrollbar py-1">
                    <div className="bg-white/60 px-2 py-0.5 rounded-md border border-gray-100 shrink-0">{task.date}</div>
                    {task.assignees && task.assignees.length > 0 ? (

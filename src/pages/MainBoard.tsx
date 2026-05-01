@@ -6,7 +6,6 @@ import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
-import Editor from 'react-simple-wysiwyg';
 
 export const MainBoard = () => {
   const { reports, filterRole, setFilterRole } = useReportStore();
@@ -62,8 +61,31 @@ export const MainBoard = () => {
     }
   };
 
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = date.getMonth() + 1;
+    const d = date.getDate();
+    const h = date.getHours().toString().padStart(2, '0');
+    const min = date.getMinutes().toString().padStart(2, '0');
+    const s = date.getSeconds().toString().padStart(2, '0');
+    return `${y}年${m}月${d}日 ${h}:${min}:${s}`;
+  };
+
   return (
     <div className="pb-24 max-w-4xl mx-auto">
+      <div className="text-center mb-6">
+        <span className="inline-block bg-white/70 backdrop-blur-md px-6 py-2 rounded-full shadow-sm border border-white/50 text-gray-700 font-bold tracking-wider">
+          {formatDate(currentTime)}
+        </span>
+      </div>
+
       {/* BM用：視点切り替えトグル */}
       {isBM && (
         <div className="mb-6 px-4 py-3 mx-2 bg-gradient-to-r from-paradise-blue/20 to-paradise-lavender/20 border-2 border-white/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
@@ -125,7 +147,7 @@ export const MainBoard = () => {
                 </div>
               </div>
 
-              <div className="max-h-[50vh] overflow-y-auto no-scrollbar prose prose-sm max-w-none text-gray-700 bg-white p-4 rounded-xl shadow-inner border border-gray-100" dangerouslySetInnerHTML={{ __html: activeAnnouncements[0].content }} />
+              <div className="max-h-[50vh] overflow-y-auto no-scrollbar prose prose-sm max-w-none text-gray-700 bg-white p-4 rounded-xl shadow-inner border border-gray-100 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: activeAnnouncements[0].content }} />
 
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
                 {/* 見たよ以外にも直接「今後表示しない」を押せるようにする */}
@@ -280,13 +302,13 @@ export const MainBoard = () => {
                       <div className="mt-6 pt-6 border-t border-white/20 space-y-6">
                         <section>
                           <label className="text-xs font-black text-paradise-sunset uppercase tracking-[0.2em] mb-1.5 block">キープ</label>
-                          <div className="text-sm text-gray-700 leading-relaxed font-medium line-clamp-3 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.keep }} />
+                          <div className="text-sm text-gray-700 leading-relaxed font-medium line-clamp-3 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.keep }} />
                         </section>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
                             <label className="text-xs font-black text-red-400 uppercase tracking-[0.2em] mb-1 block">問題点</label>
-                            <div className="text-sm text-gray-600 line-clamp-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
+                            <div className="text-sm text-gray-600 line-clamp-2 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
                           </section>
                           <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
                             <label className="text-xs font-black text-paradise-mint uppercase tracking-[0.2em] mb-1 block">挑戦</label>

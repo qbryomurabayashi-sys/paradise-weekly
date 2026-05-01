@@ -16,7 +16,9 @@ import { useAuthStore } from './store/useAuthStore';
 import { useReportStore } from './store/useReportStore';
 import { useNotificationStore } from './store/useNotificationStore';
 import { useUsersStore } from './store/useUsersStore';
-import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare } from 'lucide-react';
+import { KeyPassManagement } from './pages/KeyPassManagement';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -109,6 +111,9 @@ const Header = () => {
                 <Link to="/shift/request" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <Calendar size={20} className="text-paradise-ocean" /> 希望休の提出
                 </Link>
+                <Link to="/key-pass" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Key size={20} className="text-yellow-600" /> 鍵・入館証管理
+                </Link>
                 <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <Calendar size={20} /> カレンダー
                 </Link>
@@ -130,7 +135,7 @@ const Header = () => {
             <Sparkles className="text-paradise-sunset" size={20} />
         </div>
         <div>
-          <h1 className="text-xl font-black text-white drop-shadow-md tracking-widest uppercase text-left">週次報告</h1>
+          <h1 className="text-lg sm:text-xl font-black text-white drop-shadow-md tracking-widest uppercase text-left">管理者共有ツールAPP</h1>
           <div className="h-0.5 w-full bg-gradient-to-r from-paradise-sunset to-transparent rounded-full" />
         </div>
       </div>
@@ -325,6 +330,7 @@ export default function App() {
               <Route path="/calendar" element={<CalendarView />} />
               <Route path="/shift" element={<ShiftDashboard />} />
               <Route path="/shift/request" element={<StaffShiftRequest />} />
+              <Route path="/key-pass" element={<ErrorBoundary><KeyPassManagement /></ErrorBoundary>} />
               <Route path="/projects" element={<ProjectsView />} />
               <Route path="/post-announcement" element={<PostAnnouncement />} />
             </Routes>
