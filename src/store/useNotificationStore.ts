@@ -4,7 +4,7 @@ import { collection, query, orderBy, onSnapshot, doc, updateDoc, writeBatch, get
 
 export interface AppNotification {
   id: string;
-  type: 'comment' | 'reaction' | 'system';
+  type: 'comment' | 'reaction' | 'system' | 'read' | 'read_announcement';
   fromUserId: string;
   fromUserName: string;
   reportId: string;

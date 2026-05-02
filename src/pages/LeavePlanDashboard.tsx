@@ -112,7 +112,7 @@ export const LeavePlanDashboard = () => {
         
         const unassignedStaffs = mixedStaffs.filter((s:any) => !stores.some(st => st.id === s.storeId));
         if (unassignedStaffs.length > 0) {
-            groups.push({ store: { id: 'unassigned', name: '未割り当て' } as Record<string,any>, staffs: unassignedStaffs });
+            groups.push({ store: { id: 'unassigned', name: '未割り当て' } as any, staffs: unassignedStaffs });
         }
         
         if (!isAdmin) {

@@ -8,6 +8,7 @@ import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ChevronRight, ChevronLeft, Send, Sparkles, Check, Info, Plus, X, Calendar as CalendarIcon } from 'lucide-react';
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
+import { getFiscalWeek } from '../lib/dateUtils';
 
 const STEPS = [
   { id: 'info', title: '【#店長週間報告】', desc: '*毎週日曜日18:00まで', fields: ['storeName', 'authorName'] },
@@ -139,8 +140,8 @@ export const PostReport = () => {
               authorRole: activeRole || '店長',
               authorPhotoURL: user?.photoURL || '',
               storeName: formData.storeName,
-              weekNumber: 15,
-              year: 2026,
+              weekNumber: getFiscalWeek(new Date()),
+              year: new Date().getFullYear(),
               ...formData
             });
 

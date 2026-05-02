@@ -83,6 +83,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // --- Leave Plans ---
+    match /leave_plans/{planId} {
+      allow read, write: if isSignedIn();
+    }
+
     // --- Projects & Chat Collection ---
     match /projects/{projectId} {
       allow read, write: if isSignedIn();

@@ -73,6 +73,23 @@
         "notes": { "type": "string" }
       },
       "required": ["id", "staffId", "storeId", "date", "type", "status", "submittedBy"]
+    },
+    "LeavePlan": {
+      "title": "Leave Plan",
+      "description": "Planned leaves and external duties for future months",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "storeId": { "type": "string" },
+        "targetMonth": { "type": "string" },
+        "paidLeave": { "type": "number" },
+        "publicWork": { "type": "number" },
+        "training": { "type": "number" },
+        "meeting": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "staffId", "storeId", "targetMonth", "paidLeave", "publicWork", "training", "meeting"]
     }
   },
   "firestore": {
@@ -91,6 +108,10 @@
     "/shift_requests/{requestId}": {
       "schema": { "$ref": "#/entities/ShiftRequest" },
       "description": "Shift requests and events"
+    },
+    "/leave_plans/{planId}": {
+      "schema": { "$ref": "#/entities/LeavePlan" },
+      "description": "Planned leaves for staff"
     }
   }
 }

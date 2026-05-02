@@ -109,6 +109,58 @@ export const MainBoard = () => {
     setShowReminderPopup(false);
   };
 
+  // Available months initialization
+  const availableMonths = React.useMemo(() => {
+    const months = new Set<string>();
+    reports.forEach(r => {
+      const d = new Date(r.createdAt);
+      months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    });
+    const sorted = Array.from(months).sort().reverse();
+    // 常に現在の月がない場合は追加しておく（レポートがゼロでも当月は出したい場合があるため）
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (!sorted.includes(currentMonthStr)) {
+        sorted.unshift(currentMonthStr);
+        sorted.sort().reverse();
+    }
+    return sorted;
+  }, [reports]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+     const d = new Date();
+     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // Calculate grouped and filtered reports
+  const displayReports = React.useMemo(() => {
+    const [year, month] = selectedMonth.split('-');
+    return reports.filter(r => {
+      const d = new Date(r.createdAt);
+      return d.getFullYear().toString() === year && String(d.getMonth() + 1).padStart(2, '0') === month;
+    }).filter(r => {
+       // 役割によるフィルター
+       if (filterRole && r.authorRole !== filterRole) return false;
+       // 権限による閲覧制限: AMレポートはAMとBMのみ
+       if (r.authorRole === 'AM' && activeRole !== 'AM' && activeRole !== 'BM') return false;
+       // BMのレポートは通常存在しないが念のため
+       if (r.authorRole === 'BM' && activeRole !== 'BM') return false;
+       return true;
+    });
+  }, [reports, selectedMonth, filterRole, activeRole]);
+
+  // Group by week
+  const groupedByWeek = React.useMemo(() => {
+    const groups: { [week: number]: typeof reports } = {};
+    displayReports.forEach(r => {
+       if (!groups[r.weekNumber]) {
+          groups[r.weekNumber] = [];
+       }
+       groups[r.weekNumber].push(r);
+    });
+    return groups;
+  }, [displayReports]);
+
   return (
     <div className="pb-24 max-w-4xl mx-auto">
       <div className="text-center mb-6">
@@ -305,139 +357,175 @@ export const MainBoard = () => {
         ))}
       </div>
 
-      {/* レポートリスト */}
-      <div className="grid gap-3 px-2">
-        {filteredReports.map((report, index) => {
-          const isExpanded = expandedIds.includes(report.id);
+      {/* 月変更タブ */}
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar px-2">
+        {availableMonths.map(month => {
+          const [y, m] = month.split('-');
           return (
-            <motion.div
-              key={report.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              onClick={() => navigate(`/report/${report.id}`)}
-              className="cursor-pointer"
+            <button
+              key={month}
+              onClick={() => setSelectedMonth(month)}
+              className={`px-4 py-2 rounded-full border-2 transition-all whitespace-nowrap font-bold text-sm ${
+                selectedMonth === month
+                  ? 'border-paradise-ocean bg-paradise-ocean/10 text-paradise-ocean font-black'
+                  : 'border-transparent bg-white/50 text-gray-500 hover:bg-white/80'
+              }`}
             >
-            <GlassCard className={`relative overflow-hidden group transition-all duration-300 ${isExpanded ? 'p-6' : 'p-3'} ${!report.readBy?.includes(user?.uid || '') ? 'border-l-4 border-l-paradise-sunset' : ''}`}>
-                {/* 投稿日と既読バッジ */}
-                <div className="absolute top-2 left-3 flex items-center gap-2 z-10">
-                   <span className="text-[10px] font-bold text-gray-400 bg-white/60 px-1.5 py-0.5 rounded-full shadow-sm">
-                      {new Date(report.createdAt).toLocaleDateString()}
-                   </span>
-                   {!report.readBy?.includes(user?.uid || '') && (
-                     <span className="flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-paradise-sunset opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-paradise-sunset"></span>
-                     </span>
-                   )}
-                </div>
-
-                {/* 装飾用の光 */}
-                <div className="absolute -top-10 -right-10 w-32 h-32 bg-paradise-mint/10 rounded-full blur-3xl group-hover:bg-paradise-mint/20 transition-all duration-700" />
-                
-                <div className="flex items-center justify-between gap-4 mt-4">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-white/40 flex items-center justify-center text-xl shadow-inner border border-white/40 overflow-hidden shrink-0">
-                      {report.authorPhotoURL ? (
-                        <img src={report.authorPhotoURL} alt={report.authorName} className="w-full h-full object-cover" />
-                      ) : (
-                        report.authorRole === '店長' ? '🏠' : report.authorRole === 'AM' ? '💼' : '🌟'
-                      )}
-                    </div>
-                    <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-white bg-paradise-ocean/60 px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest shrink-0">
-                          {report.authorRole}
-                        </span>
-                        <h3 className="text-base font-bold text-gray-800 truncate">{report.authorName}</h3>
-                      </div>
-                      <span className="text-xs font-bold text-gray-400 truncate sm:border-l sm:pl-3 border-white/40">
-                        {report.storeName}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 shrink-0">
-                    <div className="hidden md:flex gap-1.5">
-                      {report.reactions.slice(0, 2).map((reaction, i) => (
-                        <div key={i} className="flex items-center gap-1 bg-white/30 px-2 py-0.5 rounded-full border border-white/40">
-                          {getReactionIcon(reaction.type)}
-                          <span className="text-xs font-bold text-gray-600">{reaction.count}</span>
-                        </div>
-                      ))}
-                      {report.commentCount > 0 && (
-                        <div className="flex items-center gap-1 bg-white/30 px-2 py-0.5 rounded-full border border-white/40">
-                          <MessageCircle size={14} className="text-blue-400" />
-                          <span className="text-xs font-bold text-gray-600">{report.commentCount}</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right flex flex-col items-end">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">W{report.weekNumber}</span>
-                      <button 
-                        onClick={(e) => toggleExpand(e, report.id)}
-                        className="p-1 hover:bg-white/50 rounded-lg transition-colors text-gray-400 hover:text-paradise-sunset"
-                      >
-                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <AnimatePresence>
-                  {isExpanded && (
-                    <motion.div 
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-6 pt-6 border-t border-white/20 space-y-6">
-                        <section>
-                          <label className="text-xs font-black text-paradise-sunset uppercase tracking-[0.2em] mb-1.5 block">キープ</label>
-                          <div className="text-sm text-gray-700 leading-relaxed font-medium line-clamp-3 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.keep }} />
-                        </section>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
-                            <label className="text-xs font-black text-red-400 uppercase tracking-[0.2em] mb-1 block">問題点</label>
-                            <div className="text-sm text-gray-600 line-clamp-2 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
-                          </section>
-                          <section className="bg-white/20 p-4 rounded-2xl border border-white/20">
-                            <label className="text-xs font-black text-paradise-mint uppercase tracking-[0.2em] mb-1 block">挑戦</label>
-                            <p className="text-sm text-gray-600 line-clamp-2">{report.try_what}</p>
-                          </section>
-                        </div>
-
-                        <div className="flex justify-between items-center bg-white/10 p-3 rounded-2xl">
-                          <div className="flex gap-2">
-                             {report.reactions.map((reaction, i) => (
-                               <div key={i} className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600">
-                                 {getReactionIcon(reaction.type)} {reaction.count}
-                               </div>
-                             ))}
-                             {report.commentCount > 0 && (
-                               <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600">
-                                 <MessageCircle size={14} className="text-blue-400" /> {report.commentCount}
-                               </div>
-                             )}
-                          </div>
-                          <div className="flex items-center gap-1 text-[10px] font-black text-paradise-ocean uppercase">
-                            詳細を開く <ChevronRight size={12} />
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </GlassCard>
-            </motion.div>
-          );
+              {y}年{parseInt(m)}月
+            </button>
+          )
         })}
       </div>
 
+      {/* レポートリスト - 月ごと・週ごとのツリー型表示 */}
+      <div className="space-y-8 px-2">
+         {Object.entries(groupedByWeek as Record<string, any[]>).sort((a, b) => Number(b[0]) - Number(a[0])).map(([weekNum, weekReports]) => (
+            <div key={weekNum} className="space-y-4">
+               {/* ツリー型の親（週）の表示 */}
+               <div className="flex items-center gap-2 text-paradise-ocean font-black border-b-2 border-paradise-ocean/20 pb-2">
+                  <div className="w-6 h-6 rounded-md bg-paradise-ocean/20 flex items-center justify-center text-xs">W</div>
+                  <h3 className="text-lg text-gray-700">第 {weekNum} 週</h3>
+                  <span className="text-xs bg-paradise-ocean text-white px-2 py-0.5 rounded-full">{weekReports.length} 件</span>
+               </div>
+               
+               <div className="grid gap-4 ml-3 border-l-2 border-paradise-ocean/20 pl-4 py-2 relative">
+                 {weekReports.map((report, index) => {
+                    const isExpanded = expandedIds.includes(report.id);
+                    return (
+                        <div key={report.id} className="relative">
+                            {/* ツリーの枝の線 */}
+                            <div className="absolute -left-4 top-10 w-4 h-[2px] bg-paradise-ocean/20"></div>
+                            
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: index * 0.05 }}
+                              onClick={() => navigate(`/report/${report.id}`)}
+                              className="cursor-pointer"
+                            >
+                            <GlassCard className={`relative overflow-hidden group transition-all duration-300 shadow-sm hover:shadow-md ${isExpanded ? 'p-6' : 'p-3'} ${!report.readBy?.includes(user?.uid || '') ? 'border-l-4 border-l-paradise-sunset' : 'border-gray-200/50'}`}>
+                                {/* 投稿日と既読バッジ */}
+                                <div className="absolute top-2 left-3 flex items-center gap-2 z-10">
+                                   <span className="text-[10px] font-bold text-gray-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm">
+                                      {new Date(report.createdAt).toLocaleDateString()}
+                                   </span>
+                                   {!report.readBy?.includes(user?.uid || '') && (
+                                     <span className="flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-paradise-sunset opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-paradise-sunset"></span>
+                                     </span>
+                                   )}
+                                </div>
+
+                                {/* 装飾用の光 */}
+                                <div className="absolute -top-10 -right-10 w-32 h-32 bg-paradise-mint/5 rounded-full blur-3xl group-hover:bg-paradise-mint/10 transition-all duration-700" />
+                                
+                                <div className="flex items-center justify-between gap-4 mt-4">
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center text-xl shadow-inner border border-white/60 overflow-hidden shrink-0">
+                                      {report.authorPhotoURL ? (
+                                        <img src={report.authorPhotoURL} alt={report.authorName} className="w-full h-full object-cover" />
+                                      ) : (
+                                        report.authorRole === '店長' ? '🏠' : report.authorRole === 'AM' ? '💼' : '🌟'
+                                      )}
+                                    </div>
+                                    <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black text-white bg-paradise-ocean/60 px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest shrink-0">
+                                          {report.authorRole}
+                                        </span>
+                                        <h3 className="text-base font-bold text-gray-800 truncate">{report.authorName}</h3>
+                                      </div>
+                                      <span className="text-xs font-bold text-gray-500 truncate sm:border-l sm:pl-3 border-gray-200">
+                                        {report.storeName}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-4 shrink-0">
+                                    <div className="hidden md:flex gap-1.5">
+                                      {report.reactions.slice(0, 2).map((reaction, i) => (
+                                        <div key={i} className="flex items-center gap-1 bg-white/50 px-2 py-0.5 rounded-full border border-gray-100/50">
+                                          {getReactionIcon(reaction.type)}
+                                          <span className="text-xs font-bold text-gray-600">{reaction.count}</span>
+                                        </div>
+                                      ))}
+                                      {report.commentCount > 0 && (
+                                        <div className="flex items-center gap-1 bg-white/50 px-2 py-0.5 rounded-full border border-gray-100/50">
+                                          <MessageCircle size={14} className="text-blue-400" />
+                                          <span className="text-xs font-bold text-gray-600">{report.commentCount}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="text-right flex flex-col items-end">
+                                      <button 
+                                        onClick={(e) => toggleExpand(e, report.id)}
+                                        className="p-1 hover:bg-white/50 rounded-lg transition-colors text-gray-400 hover:text-paradise-ocean mt-1"
+                                      >
+                                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <AnimatePresence>
+                                  {isExpanded && (
+                                    <motion.div 
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="mt-6 pt-6 border-t border-gray-100/50 space-y-6">
+                                        <section>
+                                          <label className="text-xs font-black text-paradise-sunset uppercase tracking-[0.2em] mb-1.5 block">キープ</label>
+                                          <div className="text-sm text-gray-700 leading-relaxed font-medium line-clamp-3 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.keep }} />
+                                        </section>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <section className="bg-white/40 p-4 rounded-2xl border border-white/40">
+                                            <label className="text-xs font-black text-red-500 uppercase tracking-[0.2em] mb-1 block">問題点</label>
+                                            <div className="text-sm text-gray-700 line-clamp-2 prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: report.problem_gap }} />
+                                          </section>
+                                          <section className="bg-white/40 p-4 rounded-2xl border border-white/40">
+                                            <label className="text-xs font-black text-paradise-ocean uppercase tracking-[0.2em] mb-1 block">挑戦</label>
+                                            <p className="text-sm text-gray-700 line-clamp-2">{report.try_what}</p>
+                                          </section>
+                                        </div>
+
+                                        <div className="flex justify-between items-center bg-white/40 p-3 rounded-2xl border border-white/50">
+                                          <div className="flex gap-2">
+                                             {report.reactions.map((reaction, i) => (
+                                               <div key={i} className="flex items-center gap-1 bg-white/60 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600 border border-gray-100">
+                                                 {getReactionIcon(reaction.type)} {reaction.count}
+                                               </div>
+                                             ))}
+                                             {report.commentCount > 0 && (
+                                               <div className="flex items-center gap-1 bg-white/60 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600 border border-gray-100">
+                                                 <MessageCircle size={14} className="text-blue-400" /> {report.commentCount}
+                                               </div>
+                                             )}
+                                          </div>
+                                          <div className="flex items-center gap-1 text-[10px] font-black text-paradise-ocean uppercase bg-white/50 px-3 py-1.5 rounded-full hover:bg-white transition-colors">
+                                            詳細を開く <ChevronRight size={12} />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </GlassCard>
+                            </motion.div>
+                        </div>
+                    );
+                 })}
+               </div>
+            </div>
+         ))}
+      </div>
+
       {/* 空の状態 */}
-      {filteredReports.length === 0 && (
+      {Object.keys(groupedByWeek).length === 0 && (
         <div className="text-center py-20 opacity-50">
           <p className="text-xl font-bold text-gray-400">レポートがまだありません</p>
           <p className="text-base text-gray-300 mt-2">あなたの体験を最初のレポートにしましょう 🌴</p>

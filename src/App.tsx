@@ -19,7 +19,8 @@ import { useUsersStore } from './store/useUsersStore';
 import { KeyPassManagement } from './pages/KeyPassManagement';
 import { LeavePlanDashboard } from './pages/LeavePlanDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key } from 'lucide-react';
+import { useAppUpdate } from './hooks/useAppUpdate';
+import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -218,6 +219,7 @@ export default function App() {
   const { init: initReports } = useReportStore();
   const [isLanding, setIsLanding] = useState(true);
   const [isLineBrowser, setIsLineBrowser] = useState(false);
+  const updateAvailable = useAppUpdate();
 
   useEffect(() => {
     // LINEブラウザの検知
@@ -324,6 +326,23 @@ export default function App() {
             className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-paradise-pink/20 blur-[100px] rounded-full" 
           />
         </div>
+
+        {updateAvailable && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-paradise-ocean/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-black text-gray-800">新しいバージョンがあります</p>
+                <p className="text-xs font-bold text-gray-500 mt-0.5">最新の機能を使用するには更新してください</p>
+              </div>
+              <button 
+                onClick={() => window.location.reload()}
+                className="bg-paradise-ocean text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-paradise-ocean/90 transition-colors shadow-lg active:scale-95"
+              >
+                <RefreshCcw size={16} /> 更新
+              </button>
+            </div>
+          </div>
+        )}
 
         <Header />
 

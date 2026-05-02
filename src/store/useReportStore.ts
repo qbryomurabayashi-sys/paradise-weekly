@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { getFiscalWeek } from '../lib/dateUtils';
 
 export interface Reaction {
   type: string;
@@ -309,10 +310,27 @@ export const useReportStore = create<ReportState>((set) => ({
   init: () => {
     const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const reports = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Report[];
+      const reports = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        let weekNumber = data.weekNumber;
+        if (data.createdAt) {
+           const d = new Date(data.createdAt);
+           const correctWeek = getFiscalWeek(d);
+           
+           if (weekNumber !== correctWeek && data.authorId === auth.currentUser?.uid) {
+             // Silently update if we are the author (so rules don't fail)
+             updateDoc(doc(db, 'reports', docSnap.id), { weekNumber: correctWeek }).catch(e => console.error("Auto update failed:", e));
+             weekNumber = correctWeek;
+           } else if (weekNumber !== correctWeek) {
+             weekNumber = correctWeek; // Render correct week even if update fails/not authorized
+           }
+        }
+        return {
+          id: docSnap.id,
+          ...data,
+          weekNumber
+        };
+      }) as Report[];
       set({ reports });
     }, (error) => {
       // ログアウト時（許可なし）はエラーを出さずに静かに終了する
