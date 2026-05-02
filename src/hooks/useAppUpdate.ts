@@ -4,23 +4,17 @@ export const useAppUpdate = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
-    // Vite in production serves <script type="module" crossorigin src="/assets/index-HASH.js">
-    const currentScripts = Array.from(document.querySelectorAll('script[src]'))
-      .map(s => s.getAttribute('src'))
-      .filter(src => src?.includes('/assets/index-'));
-
-    if (currentScripts.length === 0) return;
-
-    const currentHash = currentScripts[0];
+    let initialVersion: number | null = null;
 
     const checkUpdate = async () => {
       try {
-        const res = await fetch('/?' + new Date().getTime(), { cache: 'no-store' });
-        const html = await res.text();
+        const res = await fetch('/version.json?' + new Date().getTime(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
         
-        // Find main script tag in fetched html
-        const match = html.match(/src="(\/assets\/index-[^"]+\.js)"/);
-        if (match && match[1] !== currentHash) {
+        if (initialVersion === null) {
+          initialVersion = data.version;
+        } else if (data.version && data.version !== initialVersion) {
           setUpdateAvailable(true);
         }
       } catch (err) {
@@ -28,9 +22,12 @@ export const useAppUpdate = () => {
       }
     };
 
-    const interval = setInterval(checkUpdate, 60000); // Check every minute
+    // First check
+    checkUpdate();
+
+    // Check frequently since user requested it to show up quickly (e.g. 10s)
+    const interval = setInterval(checkUpdate, 10000); 
     
-    // Listen for window focus to check immediately
     const onFocus = () => checkUpdate();
     window.addEventListener('focus', onFocus);
 

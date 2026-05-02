@@ -128,6 +128,13 @@ const Header = () => {
                 <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <User size={20} /> プロフィール
                 </Link>
+                <div className="h-px bg-gray-200 my-2" />
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-paradise-ocean font-bold text-left"
+                >
+                  <RefreshCcw size={20} /> アプリを更新する
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

@@ -51,13 +51,13 @@ export const MainBoard = () => {
     );
   };
 
-  const getReactionIcon = (type: string) => {
+  const getReactionIcon = (type: string, size = 14) => {
     switch (type) {
-      case 'like': return <ThumbsUp size={14} className="text-paradise-sunset" />;
-      case 'learn': return <Lightbulb size={14} className="text-yellow-500" />;
-      case 'copy': return <Rocket size={14} className="text-purple-500" />;
-      case 'great': return <Stars size={14} className="text-pink-500" />;
-      default: return <ThumbsUp size={14} />;
+      case 'like': return <ThumbsUp size={size} className="text-paradise-sunset" />;
+      case 'learn': return <Lightbulb size={size} className="text-yellow-500" />;
+      case 'copy': return <Rocket size={size} className="text-purple-500" />;
+      case 'great': return <Stars size={size} className="text-pink-500" />;
+      default: return <ThumbsUp size={size} />;
     }
   };
 
@@ -404,23 +404,37 @@ export const MainBoard = () => {
                               className="cursor-pointer"
                             >
                             <GlassCard className={`relative overflow-hidden group transition-all duration-300 shadow-sm hover:shadow-md ${isExpanded ? 'p-6' : 'p-3'} ${!report.readBy?.includes(user?.uid || '') ? 'border-l-4 border-l-paradise-sunset' : 'border-gray-200/50'}`}>
-                                {/* 投稿日と既読バッジ */}
-                                <div className="absolute top-2 left-3 flex items-center gap-2 z-10">
-                                   <span className="text-[10px] font-bold text-gray-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm">
-                                      {new Date(report.createdAt).toLocaleDateString()}
-                                   </span>
-                                   {!report.readBy?.includes(user?.uid || '') && (
-                                     <span className="flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-paradise-sunset opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-paradise-sunset"></span>
+                                {/* 投稿日と既読バッジとリアクション */}
+                                <div className="flex items-center justify-between z-10 mb-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                     <span className="text-[10px] font-bold text-gray-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm">
+                                        {new Date(report.createdAt).toLocaleDateString()}
                                      </span>
-                                   )}
+                                     {!report.readBy?.includes(user?.uid || '') && (
+                                       <span className="flex h-2 w-2 shrink-0">
+                                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-paradise-sunset opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-2 w-2 bg-paradise-sunset"></span>
+                                       </span>
+                                     )}
+                                     {report.reactions.map((reaction, i) => (
+                                       <div key={i} className="flex items-center gap-1 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-gray-100/50">
+                                         {getReactionIcon(reaction.type, 12)}
+                                         <span className="text-[10px] font-bold text-gray-600">{reaction.count}</span>
+                                       </div>
+                                     ))}
+                                     {report.commentCount > 0 && (
+                                       <div className="flex items-center gap-1 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-gray-100/50">
+                                         <MessageCircle size={12} className="text-blue-400" />
+                                         <span className="text-[10px] font-bold text-gray-600">{report.commentCount}</span>
+                                       </div>
+                                     )}
+                                  </div>
                                 </div>
 
                                 {/* 装飾用の光 */}
                                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-paradise-mint/5 rounded-full blur-3xl group-hover:bg-paradise-mint/10 transition-all duration-700" />
                                 
-                                <div className="flex items-center justify-between gap-4 mt-4">
+                                <div className="flex items-center justify-between gap-4">
                                   <div className="flex items-center gap-3 flex-1 min-w-0">
                                     <div className="w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center text-xl shadow-inner border border-white/60 overflow-hidden shrink-0">
                                       {report.authorPhotoURL ? (
@@ -443,20 +457,6 @@ export const MainBoard = () => {
                                   </div>
 
                                   <div className="flex items-center gap-4 shrink-0">
-                                    <div className="hidden md:flex gap-1.5">
-                                      {report.reactions.slice(0, 2).map((reaction, i) => (
-                                        <div key={i} className="flex items-center gap-1 bg-white/50 px-2 py-0.5 rounded-full border border-gray-100/50">
-                                          {getReactionIcon(reaction.type)}
-                                          <span className="text-xs font-bold text-gray-600">{reaction.count}</span>
-                                        </div>
-                                      ))}
-                                      {report.commentCount > 0 && (
-                                        <div className="flex items-center gap-1 bg-white/50 px-2 py-0.5 rounded-full border border-gray-100/50">
-                                          <MessageCircle size={14} className="text-blue-400" />
-                                          <span className="text-xs font-bold text-gray-600">{report.commentCount}</span>
-                                        </div>
-                                      )}
-                                    </div>
                                     <div className="text-right flex flex-col items-end">
                                       <button 
                                         onClick={(e) => toggleExpand(e, report.id)}
