@@ -78,12 +78,53 @@ export const MainBoard = () => {
     return `${y}年${m}月${d}日 ${h}:${min}:${s}`;
   };
 
+  const getActiveReminders = (now: Date) => {
+    const reminders = [];
+    const dayOfWeek = now.getDay();
+    const hours = now.getHours();
+    const date = now.getDate();
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+    if (dayOfWeek === 6 || (dayOfWeek === 0 && hours < 18)) {
+      reminders.push({ id: 'weekly', title: '週次報告', time: '日曜日 18:00まで', icon: '📝' });
+    }
+    if (date === 14 || (date === 15 && hours < 18)) {
+      reminders.push({ id: 'keypass', title: '鍵・入館証の所持確認', time: '15日 18:00まで', icon: '🔑' });
+      reminders.push({ id: 'shift', title: 'シフトの提出', time: '15日 18:00まで', icon: '📅' });
+    }
+    if (date === lastDayOfMonth - 1 || (date === lastDayOfMonth && hours < 18)) {
+      reminders.push({ id: 'leaveplan', title: '有休・公出などの予定数提出', time: '月末日 18:00まで', icon: '🏖️' });
+    }
+    return reminders;
+  };
+
+  const activeReminders = getActiveReminders(currentTime);
+  const todayStr = currentTime.toLocaleDateString();
+  const [showReminderPopup, setShowReminderPopup] = useState(() => {
+    return sessionStorage.getItem('reminder_dismissed_date') !== todayStr;
+  });
+
+  const dismissReminder = () => {
+    sessionStorage.setItem('reminder_dismissed_date', todayStr);
+    setShowReminderPopup(false);
+  };
+
   return (
     <div className="pb-24 max-w-4xl mx-auto">
       <div className="text-center mb-6">
         <span className="inline-block bg-white/70 backdrop-blur-md px-6 py-2 rounded-full shadow-sm border border-white/50 text-gray-700 font-bold tracking-wider">
           {formatDate(currentTime)}
         </span>
+        {activeReminders.length > 0 && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {activeReminders.map(rem => (
+              <div key={rem.id} className="inline-flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 px-4 py-1.5 rounded-full text-sm font-bold shadow-sm animate-pulse">
+                <span>{rem.icon}</span>
+                <span>{rem.title}の期限が迫っています ({rem.time})</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* BM用：視点切り替えトグル */}
@@ -112,6 +153,52 @@ export const MainBoard = () => {
             </div>
         </div>
       )}
+
+      {/* リマインダーポップアップ */}
+      <AnimatePresence>
+        {showReminderPopup && activeReminders.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-sm bg-white/95 backdrop-blur-xl p-6 rounded-[2rem] shadow-2xl border-4 border-red-400"
+            >
+              <div className="flex flex-col items-center text-center gap-2 mb-4">
+                <div className="bg-red-100 text-red-500 p-3 rounded-full mb-2 animate-bounce">
+                  <Megaphone size={32} />
+                </div>
+                <h3 className="text-xl font-black text-gray-800">提出期限のお知らせ</h3>
+                <p className="text-sm font-bold text-gray-500">以下の項目がもうすぐ提出期限です</p>
+              </div>
+
+              <div className="space-y-3 my-6">
+                {activeReminders.map(rem => (
+                  <div key={rem.id} className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-center gap-3">
+                    <span className="text-2xl">{rem.icon}</span>
+                    <div className="text-left">
+                      <div className="text-sm font-black text-gray-800">{rem.title}</div>
+                      <div className="text-xs font-bold text-red-500">{rem.time}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button 
+                onClick={dismissReminder}
+                className="w-full bg-paradise-sunset text-white font-bold py-3 rounded-full shadow-lg hover:shadow-paradise-sunset/50 transition-all active:scale-95"
+              >
+                確認しました
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* お知らせポップアップ */}
       <AnimatePresence>
@@ -278,6 +365,12 @@ export const MainBoard = () => {
                           <span className="text-xs font-bold text-gray-600">{reaction.count}</span>
                         </div>
                       ))}
+                      {report.commentCount > 0 && (
+                        <div className="flex items-center gap-1 bg-white/30 px-2 py-0.5 rounded-full border border-white/40">
+                          <MessageCircle size={14} className="text-blue-400" />
+                          <span className="text-xs font-bold text-gray-600">{report.commentCount}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right flex flex-col items-end">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">W{report.weekNumber}</span>
@@ -323,6 +416,11 @@ export const MainBoard = () => {
                                  {getReactionIcon(reaction.type)} {reaction.count}
                                </div>
                              ))}
+                             {report.commentCount > 0 && (
+                               <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600">
+                                 <MessageCircle size={14} className="text-blue-400" /> {report.commentCount}
+                               </div>
+                             )}
                           </div>
                           <div className="flex items-center gap-1 text-[10px] font-black text-paradise-ocean uppercase">
                             詳細を開く <ChevronRight size={12} />

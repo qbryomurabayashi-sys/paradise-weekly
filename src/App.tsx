@@ -17,6 +17,7 @@ import { useReportStore } from './store/useReportStore';
 import { useNotificationStore } from './store/useNotificationStore';
 import { useUsersStore } from './store/useUsersStore';
 import { KeyPassManagement } from './pages/KeyPassManagement';
+import { LeavePlanDashboard } from './pages/LeavePlanDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -114,6 +115,9 @@ const Header = () => {
                 <Link to="/key-pass" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <Key size={20} className="text-yellow-600" /> 鍵・入館証管理
                 </Link>
+                <Link to="/leave-plans" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
+                  <Calendar size={20} className="text-emerald-500" /> 予定数提出・確認
+                </Link>
                 <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-paradise-sunset/10 text-gray-700 font-bold">
                   <Calendar size={20} /> カレンダー
                 </Link>
@@ -180,8 +184,14 @@ const Header = () => {
                     onClick={() => handleNotificationClick(notif)}
                     className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer transition-colors bg-paradise-ocean/5 hover:bg-paradise-ocean/10 border border-paradise-ocean/20`}
                   >
-                    <div className={`p-2 rounded-xl mt-1 ${notif.type === 'comment' ? 'bg-blue-100 text-blue-500' : 'bg-pink-100 text-pink-500'}`}>
-                      {notif.type === 'comment' ? <MessageCircle size={14} /> : <Heart size={14} />}
+                    <div className={`p-2 rounded-xl mt-1 ${
+                      notif.type === 'comment' ? 'bg-blue-100 text-blue-500' : 
+                      notif.type === 'read' || notif.type === 'read_announcement' ? 'bg-emerald-100 text-emerald-500' :
+                      'bg-pink-100 text-pink-500'
+                    }`}>
+                      {notif.type === 'comment' ? <MessageCircle size={14} /> : 
+                       notif.type === 'read' || notif.type === 'read_announcement' ? <CheckCircle size={14} /> :
+                       <Heart size={14} />}
                     </div>
                     <div className="flex-1">
                       <p className="text-sm text-gray-800 leading-snug">
@@ -330,6 +340,7 @@ export default function App() {
               <Route path="/calendar" element={<CalendarView />} />
               <Route path="/shift" element={<ShiftDashboard />} />
               <Route path="/shift/request" element={<StaffShiftRequest />} />
+              <Route path="/leave-plans" element={<ErrorBoundary><LeavePlanDashboard /></ErrorBoundary>} />
               <Route path="/key-pass" element={<ErrorBoundary><KeyPassManagement /></ErrorBoundary>} />
               <Route path="/projects" element={<ProjectsView />} />
               <Route path="/post-announcement" element={<PostAnnouncement />} />
