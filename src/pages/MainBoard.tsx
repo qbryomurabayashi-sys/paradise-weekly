@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 
 export const MainBoard = () => {
@@ -13,6 +13,7 @@ export const MainBoard = () => {
   const { announcements, markAsSeen, hideAnnouncement, init: initAnnounce, deleteAnnouncement } = useAnnouncementStore();
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [sessionHiddenAnns, setSessionHiddenAnns] = useState<string[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   const navigate = useNavigate();
 
   const isBM = user?.role === 'BM';
@@ -336,25 +337,100 @@ export const MainBoard = () => {
         )}
       </AnimatePresence>
 
-      {/* フィルタバー */}
-
-      <div className="flex gap-2 mb-8 overflow-x-auto pb-4 no-scrollbar px-2">
-        {['すべて', '店長', 'AM'].filter(role => {
-          if (role === 'AM' && activeRole === '店長') return false;
-          return true;
-        }).map((role) => (
-          <button
-            key={role}
-            onClick={() => setFilterRole(role === 'すべて' ? null : role as any)}
-            className={`px-6 py-2 rounded-full glass transition-all whitespace-nowrap font-bold text-base ${
-              (filterRole === role || (role === 'すべて' && !filterRole))
-                ? 'bg-paradise-sunset text-white border-none shadow-lg'
-                : 'text-gray-600 hover:bg-white/60'
-            }`}
+      {/* お知らせアーカイブポップアップ */}
+      <AnimatePresence>
+        {showArchive && (
+           <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           >
-            {role}
-          </button>
-        ))}
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-paradise-ocean/50 flex flex-col max-h-[85vh] overflow-hidden"
+            >
+               <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-white shrink-0">
+                 <div className="flex flex-col gap-1">
+                   <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                     <Megaphone size={24} className="text-paradise-ocean" /> お知らせアーカイブ
+                   </h2>
+                   <p className="text-xs text-gray-400 font-bold">過去のお知らせや確認済みのお知らせ</p>
+                 </div>
+                 <button onClick={() => setShowArchive(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 active:scale-95 transition-all">
+                   <X size={20} />
+                 </button>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 no-scrollbar bg-gray-50/50">
+                 {announcements.length === 0 ? (
+                   <p className="text-center text-gray-400 font-bold py-8">お知らせはありません</p>
+                 ) : (
+                   announcements.map(ann => (
+                     <div key={ann.id} className={`bg-white p-5 rounded-2xl border-2 ${ann.isImportant ? 'border-red-200' : 'border-paradise-ocean/20'} shadow-sm relative group`}>
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                           <div>
+                              {ann.isImportant && <span className="text-[10px] font-black text-red-500 bg-red-100 px-1.5 py-0.5 rounded uppercase mb-1 flex inline-flex items-center w-fit">重要</span>}
+                              <h3 className="text-lg font-black text-gray-800">{ann.title}</h3>
+                              <div className="text-[11px] font-bold text-gray-400 mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                                <span>{ann.authorName} ({ann.authorRole})</span>
+                                <span className="hidden sm:inline">・</span>
+                                <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
+                              </div>
+                           </div>
+                           
+                           {/* 投稿者本人の場合は削除ボタンを表示 */}
+                           {canAnnounce && ann.authorId === user?.uid && (
+                             <button
+                               onClick={() => {
+                                 if (window.confirm('このお知らせを完全に削除しますか？')) {
+                                   deleteAnnouncement(ann.id);
+                                 }
+                               }}
+                               className="text-gray-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
+                             >
+                               <X size={16} />
+                             </button>
+                           )}
+                        </div>
+                        <div className="prose prose-sm max-w-none text-gray-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap text-sm" dangerouslySetInnerHTML={{ __html: ann.content }} />
+                     </div>
+                   ))
+                 )}
+               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* フィルタバーとお知らせアーカイブ */}
+      <div className="flex items-center justify-between gap-2 mb-8 px-2 overflow-x-auto pb-4 no-scrollbar">
+        <div className="flex gap-2 flex-nowrap">
+          {['すべて', '店長', 'AM'].filter(role => {
+            if (role === 'AM' && activeRole === '店長') return false;
+            return true;
+          }).map((role) => (
+            <button
+              key={role}
+              onClick={() => setFilterRole(role === 'すべて' ? null : role as any)}
+              className={`px-6 py-2 rounded-full glass transition-all whitespace-nowrap font-bold text-base ${
+                (filterRole === role || (role === 'すべて' && !filterRole))
+                  ? 'bg-paradise-sunset text-white border-none shadow-lg'
+                  : 'text-gray-600 hover:bg-white/60'
+              }`}
+            >
+              {role}
+            </button>
+          ))}
+        </div>
+        <button 
+          onClick={() => setShowArchive(true)}
+          className="flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-full glass text-paradise-ocean font-bold text-sm hover:bg-white/60 transition-all border border-paradise-ocean/30 shadow-sm"
+        >
+          <Megaphone size={16} /> お知らせ一覧
+        </button>
       </div>
 
       {/* 月変更タブ */}
@@ -407,25 +483,25 @@ export const MainBoard = () => {
                                 {/* 投稿日と既読バッジとリアクション */}
                                 <div className="flex items-center justify-between z-10 mb-2">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                     <span className="text-[10px] font-bold text-gray-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm">
+                                     <span className="text-[11px] font-bold text-gray-500 bg-white/80 px-2 py-1 rounded-full shadow-sm border border-gray-100/50 shrink-0">
                                         {new Date(report.createdAt).toLocaleDateString()}
                                      </span>
                                      {!report.readBy?.includes(user?.uid || '') && (
-                                       <span className="flex h-2 w-2 shrink-0">
-                                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-paradise-sunset opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-2 w-2 bg-paradise-sunset"></span>
+                                       <span className="flex h-2.5 w-2.5 shrink-0">
+                                          <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-paradise-sunset opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-paradise-sunset"></span>
                                        </span>
                                      )}
                                      {report.reactions.map((reaction, i) => (
-                                       <div key={i} className="flex items-center gap-1 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-gray-100/50">
-                                         {getReactionIcon(reaction.type, 12)}
-                                         <span className="text-[10px] font-bold text-gray-600">{reaction.count}</span>
+                                       <div key={i} className="flex items-center gap-1 bg-white/90 px-2 py-1 rounded-full shadow-sm border border-gray-100/80 shrink-0">
+                                         {getReactionIcon(reaction.type, 14)}
+                                         <span className="text-[11px] font-bold text-gray-700 leading-none mt-px">{reaction.count}</span>
                                        </div>
                                      ))}
                                      {report.commentCount > 0 && (
-                                       <div className="flex items-center gap-1 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-gray-100/50">
-                                         <MessageCircle size={12} className="text-blue-400" />
-                                         <span className="text-[10px] font-bold text-gray-600">{report.commentCount}</span>
+                                       <div className="flex items-center gap-1 bg-white/90 px-2 py-1 rounded-full shadow-sm border border-gray-100/80 shrink-0">
+                                         <MessageCircle size={14} className="text-blue-400" />
+                                         <span className="text-[11px] font-bold text-gray-700 leading-none mt-px">{report.commentCount}</span>
                                        </div>
                                      )}
                                   </div>
@@ -493,20 +569,20 @@ export const MainBoard = () => {
                                           </section>
                                         </div>
 
-                                        <div className="flex justify-between items-center bg-white/40 p-3 rounded-2xl border border-white/50">
-                                          <div className="flex gap-2">
+                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white/40 p-3 rounded-2xl border border-white/50">
+                                          <div className="flex flex-wrap gap-2">
                                              {report.reactions.map((reaction, i) => (
-                                               <div key={i} className="flex items-center gap-1 bg-white/60 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600 border border-gray-100">
-                                                 {getReactionIcon(reaction.type)} {reaction.count}
+                                               <div key={i} className="flex items-center gap-1 text-sm sm:text-xs bg-white/80 px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-full font-bold text-gray-600 border border-gray-100/80 shadow-sm shrink-0">
+                                                 {getReactionIcon(reaction.type)} <span className="ml-0.5">{reaction.count}</span>
                                                </div>
                                              ))}
                                              {report.commentCount > 0 && (
-                                               <div className="flex items-center gap-1 bg-white/60 px-2.5 py-1 rounded-full text-xs font-bold text-gray-600 border border-gray-100">
-                                                 <MessageCircle size={14} className="text-blue-400" /> {report.commentCount}
+                                               <div className="flex items-center gap-1 text-sm sm:text-xs bg-white/80 px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-full font-bold text-gray-600 border border-gray-100/80 shadow-sm shrink-0">
+                                                 <MessageCircle size={14} className="text-blue-400" /> <span className="ml-0.5">{report.commentCount}</span>
                                                </div>
                                              )}
                                           </div>
-                                          <div className="flex items-center gap-1 text-[10px] font-black text-paradise-ocean uppercase bg-white/50 px-3 py-1.5 rounded-full hover:bg-white transition-colors">
+                                          <div className="flex items-center justify-center sm:justify-end gap-1 text-[10px] sm:text-[11px] font-black text-paradise-ocean uppercase bg-white/60 px-4 py-2 sm:px-3 sm:py-1.5 rounded-full hover:bg-white transition-colors shrink-0 whitespace-nowrap self-stretch sm:self-auto shadow-sm">
                                             詳細を開く <ChevronRight size={12} />
                                           </div>
                                         </div>

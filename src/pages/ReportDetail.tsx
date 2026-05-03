@@ -155,11 +155,11 @@ export const ReportDetail = () => {
         </div>
 
         {/* リアクションバー */}
-        <div className="flex justify-around py-6 border-t border-white/20">
+        <div className="grid grid-cols-4 gap-2 py-6 border-t border-white/20">
           {REACTIONS.map((r) => (
             <button 
               key={r.label} 
-              className="flex flex-col items-center gap-2 group outline-none"
+              className="flex flex-col items-center justify-start gap-2 group outline-none h-full"
               onClick={(e) => {
                 e.preventDefault();
                 if (user) {
@@ -178,10 +178,10 @@ export const ReportDetail = () => {
               >
                 <r.icon size={26} />
               </motion.div>
-              <span className="text-xs font-black text-gray-500 uppercase tracking-widest flex flex-col items-center">
-                <span>{r.label} ({report.reactions?.find(react => react.type === r.type)?.count || 0})</span>
-                {report.reactions?.find(react => react.type === r.type)?.userNames && (
-                   <span className="text-[10px] text-gray-400 normal-case mt-0.5 line-clamp-1 max-w-[80px]">
+              <span className="text-[10px] sm:text-xs font-black text-gray-500 uppercase flex flex-col items-center w-full px-0.5">
+                <span className="whitespace-nowrap flex flex-wrap justify-center gap-1"><span>{r.label}</span><span>({report.reactions?.find(react => react.type === r.type)?.count || 0})</span></span>
+                {report.reactions?.find(react => react.type === r.type)?.userNames && report.reactions?.find(react => react.type === r.type)!.userNames!.length > 0 && (
+                   <span className="text-[9px] sm:text-[10px] text-gray-400 normal-case mt-1 text-center leading-tight whitespace-normal break-words w-full px-0.5">
                      {report.reactions?.find(react => react.type === r.type)?.userNames?.join(', ')}
                    </span>
                 )}
@@ -248,8 +248,8 @@ export const ReportDetail = () => {
                       <ThumbsUp size={12} />
                       <span>{c.reactions?.find((r: any) => r.type === 'like')?.userIds.length || 0}</span>
                     </div>
-                    {c.reactions?.find((r: any) => r.type === 'like')?.userNames && (
-                      <span className="text-[10px] text-gray-400 line-clamp-1 max-w-[150px]">
+                    {c.reactions?.find((r: any) => r.type === 'like')?.userNames && c.reactions?.find((r: any) => r.type === 'like')!.userNames!.length > 0 && (
+                      <span className="text-[10px] text-gray-400 mt-1 text-right whitespace-normal break-words max-w-[200px]">
                         {c.reactions?.find((r: any) => r.type === 'like')?.userNames?.join(', ')}
                       </span>
                     )}
