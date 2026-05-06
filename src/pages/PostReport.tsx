@@ -3,10 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useReportStore } from '../store/useReportStore';
+import { doc, getDoc, collection, addDoc, serverTimestamp, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { useReportStore, Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { ChevronRight, ChevronLeft, Send, Sparkles, Check, Info, Plus, X, Calendar as CalendarIcon } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Send, Sparkles, Check, Info, Plus, X, Calendar as CalendarIcon, History, Quote } from 'lucide-react';
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
 import { getFiscalWeek } from '../lib/dateUtils';
 
@@ -53,6 +53,8 @@ export const PostReport = () => {
     try_why: '',
     tasks: [] // Array of { title, date, assignees, description }
   });
+  const [previousReport, setPreviousReport] = useState<Report | null>(null);
+  const [showPrevious, setShowPrevious] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const navigate = useNavigate();
   const { addReport, updateReport } = useReportStore();
@@ -84,6 +86,29 @@ export const PostReport = () => {
       tasks: (prev.tasks || []).filter((t: any) => t.id !== taskId)
     }));
   };
+
+  useEffect(() => {
+    if (user?.uid && !isEditMode) {
+      const fetchPreviousReport = async () => {
+        try {
+          const q = query(
+            collection(db, 'reports'),
+            where('authorId', '==', user.uid),
+            orderBy('createdAt', 'desc'),
+            limit(1)
+          );
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const doc = querySnapshot.docs[0];
+            setPreviousReport({ id: doc.id, ...doc.data() } as Report);
+          }
+        } catch (e) {
+          console.error('Failed to fetch previous report:', e);
+        }
+      };
+      fetchPreviousReport();
+    }
+  }, [user?.uid, isEditMode]);
 
   useEffect(() => {
     if (id) {
@@ -185,6 +210,84 @@ export const PostReport = () => {
 
   return (
     <div className="max-w-2xl mx-auto pt-4 pb-20 px-4">
+      {/* 前回のレポート参照ボタン */}
+      {previousReport && (
+        <div className="mb-6">
+          <button
+            onClick={() => setShowPrevious(!showPrevious)}
+            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all duration-300 ${
+              showPrevious 
+                ? 'bg-white/60 border-paradise-ocean/30 shadow-lg' 
+                : 'bg-white/30 border-white/20 hover:bg-white/40'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${showPrevious ? 'bg-paradise-ocean text-white' : 'bg-paradise-ocean/10 text-paradise-ocean'}`}>
+                <History size={20} />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-black text-gray-700">前回の振り返りを表示</p>
+                <p className="text-[10px] font-bold text-gray-400">前回：{new Date(previousReport.createdAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+            <motion.div
+              animate={{ rotate: showPrevious ? 180 : 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ChevronLeft size={20} className="text-gray-400 -rotate-90" />
+            </motion.div>
+          </button>
+
+          <AnimatePresence>
+            {showPrevious && (
+              <motion.div
+                initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                animate={{ height: 'auto', opacity: 1, marginTop: 12 }}
+                exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-6 border-2 border-paradise-ocean/10 shadow-xl space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                      <div className="bg-white/50 p-4 rounded-2xl border border-white/50">
+                        <label className="text-[10px] font-black text-paradise-sunset uppercase tracking-[0.2em] block mb-2">⭕ 前回のKeep</label>
+                        <p className="text-sm text-gray-600 leading-relaxed italic">"{previousReport.keep}"</p>
+                      </div>
+                      <div className="bg-red-50/50 p-4 rounded-2xl border border-red-100/50">
+                        <label className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] block mb-2">🔺 前回のProblem</label>
+                        <p className="text-sm text-gray-600 leading-relaxed">{previousReport.problem_gap}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="bg-paradise-blue/10 p-4 rounded-2xl border border-paradise-blue/20">
+                        <label className="text-[10px] font-black text-paradise-ocean uppercase tracking-[0.2em] block mb-2">🏃 前回のTry（来週の行動予定でした）</label>
+                        <div className="space-y-2">
+                          <p className="text-sm font-bold text-gray-800">{previousReport.try_what}</p>
+                          <p className="text-[10px] text-gray-500">
+                             <span className="font-bold">誰が：</span>{previousReport.try_who} / <span className="font-bold">いつ：</span>{previousReport.try_when}
+                          </p>
+                          {previousReport.try_why && (
+                             <p className="text-[10px] text-gray-400 italic">理由：{previousReport.try_why}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-center pt-2">
+                    <button 
+                      onClick={() => setShowPrevious(false)}
+                      className="text-xs font-bold text-paradise-ocean hover:underline"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
       {/* プログレスバー */}
       <div className="flex justify-between mb-10">
         {currentSteps.map((s, idx) => (

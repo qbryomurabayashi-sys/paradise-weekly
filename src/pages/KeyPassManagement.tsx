@@ -382,14 +382,20 @@ export const KeyPassManagement = () => {
               <div key={store.id} className={`p-4 rounded-2xl border transition-all ${hasItems ? 'bg-blue-50/60 border-blue-200 shadow-sm' : 'bg-white/60 border-white/40'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
                   <h4 className="font-bold text-gray-800 text-lg">{store.name}</h4>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div className="text-left sm:text-right">
-                      <p className="text-xs font-bold text-gray-500">
-                        {storeRec?.checkMethod === 'photo' ? '写真で最終確認: ' : storeRec?.checkMethod === 'physical' ? '現物で最終確認: ' : '最終確認: '} 
-                        {storeRec?.lastCheckedByName || '未確認'}
-                      </p>
-                      <p className="text-sm font-black text-gray-700">{storeRec?.lastCheckedAt ? new Date(storeRec.lastCheckedAt).toLocaleDateString() : '-'}</p>
-                    </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="text-left sm:text-right flex items-center sm:items-end flex-col">
+                          <p className="text-xs font-bold text-gray-500">
+                            {storeRec?.checkMethod === 'photo' ? '写真で最終確認: ' : storeRec?.checkMethod === 'physical' ? '現物で最終確認: ' : '最終確認: '} 
+                            {storeRec?.lastCheckedByName || '未確認'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {storeRec?.lastCheckedAt && (() => {
+                               const isNew = (new Date().getTime() - new Date(storeRec.lastCheckedAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
+                               return isNew ? <span className="text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded shadow-sm animate-pulse whitespace-nowrap">NEW</span> : null;
+                            })()}
+                            <p className="text-sm font-black text-gray-700">{storeRec?.lastCheckedAt ? new Date(storeRec.lastCheckedAt).toLocaleDateString() : '-'}</p>
+                          </div>
+                        </div>
                     <div className="flex gap-2">
                         <button 
                           onClick={() => handleUpdateStoreCheck(store.id, store.name, 'photo')}
@@ -570,12 +576,20 @@ export const KeyPassManagement = () => {
                                      <div className="flex flex-wrap items-center gap-2">
                                        {getTypeIcon(p.type)}
                                        <span className="text-sm font-bold text-gray-700">{p.storeName} <span className="text-xs text-gray-500">({translateType(p.type)})</span></span>
-                                       {p.lastCheckedAt && (
-                                         <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-medium whitespace-nowrap">
-                                           {p.checkMethod === 'photo' ? '写真' : p.checkMethod === 'physical' ? '現物' : ''} {new Date(p.lastCheckedAt).toLocaleDateString()}
-                                           {p.lastCheckedByName && ` (確認者: ${p.lastCheckedByName})`}
-                                         </span>
-                                       )}
+                                       {p.lastCheckedAt && (() => {
+                                          const isNew = (new Date().getTime() - new Date(p.lastCheckedAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
+                                          return (
+                                            <div className="flex items-center gap-1">
+                                              {isNew && (
+                                                <span className="text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded shadow-sm animate-pulse whitespace-nowrap">NEW</span>
+                                              )}
+                                              <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-medium whitespace-nowrap">
+                                                {p.checkMethod === 'photo' ? '写真' : p.checkMethod === 'physical' ? '現物' : ''} {new Date(p.lastCheckedAt).toLocaleDateString()}
+                                                {p.lastCheckedByName && ` (更新者: ${p.lastCheckedByName})`}
+                                              </span>
+                                            </div>
+                                          );
+                                       })()}
                                      </div>
                                      {!isBM && staffTab === 'registered' && (
                                        <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">

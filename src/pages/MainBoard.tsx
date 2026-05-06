@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 
 export const MainBoard = () => {
@@ -19,6 +19,24 @@ export const MainBoard = () => {
   const isBM = user?.role === 'BM';
   const isAM = user?.role === 'AM';
   const canAnnounce = isBM || isAM;
+
+  const currentMonth = new Date().getMonth() + 1;
+  const appraisalInterviews: Record<number, string> = {
+    7: '第4四半期評価',
+    10: '第1四半期評価',
+    1: '第2四半期評価',
+    4: '第3四半期評価'
+  };
+  const quarterlyInterviews: Record<number, string> = {
+    9: '第1四半期面談',
+    12: '第2四半期面談',
+    3: '第3四半期面談',
+    6: '第4四半期面談'
+  };
+
+  const currentAppraisal = appraisalInterviews[currentMonth];
+  const currentQuarterly = quarterlyInterviews[currentMonth];
+  const hasInterviewThisMonth = !!currentAppraisal || !!currentQuarterly;
 
   useEffect(() => {
     const unsub = initAnnounce();
@@ -179,6 +197,40 @@ export const MainBoard = () => {
           </div>
         )}
       </div>
+
+      {/* 面談スケジュール案内（アラート） */}
+      {hasInterviewThisMonth && (
+        <div className="mb-6 px-2">
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border-2 border-paradise-ocean/30 shadow-lg relative overflow-hidden"
+          >
+            <div className="relative z-10 flex items-start gap-4">
+              <div className="p-3 bg-paradise-ocean text-white rounded-xl shadow-md">
+                <Calendar size={24} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-black text-gray-800 tracking-tight flex items-center gap-2 mb-1">
+                  {currentMonth}月の面談リマインド
+                  <span className="text-[10px] font-bold text-white bg-paradise-ocean px-2 py-0.5 rounded-full inline-block">
+                    ATTENTION
+                  </span>
+                </h3>
+                <p className="text-sm font-bold text-gray-600 leading-relaxed">
+                  今月は
+                  {currentAppraisal && <span className="text-paradise-sunset font-black mx-1">「評価面談: {currentAppraisal}」</span>}
+                  {currentAppraisal && currentQuarterly && ' および '}
+                  {currentQuarterly && <span className="text-paradise-ocean font-black mx-1">「四半期面談: {currentQuarterly}」</span>}
+                  の対象月です。スケジュールを確認し、準備を進めてください。
+                </p>
+              </div>
+            </div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-paradise-ocean/10 rounded-full -mr-16 -mt-16 blur-2xl" />
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-paradise-sunset/10 rounded-full -ml-12 -mb-12 blur-xl" />
+          </motion.div>
+        </div>
+      )}
 
       {/* BM用：視点切り替えトグル */}
       {isBM && (

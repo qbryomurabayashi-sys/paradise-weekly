@@ -6,6 +6,7 @@ import { ReportDetail } from './pages/ReportDetail';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { ProfileEdit } from './pages/ProfileEdit';
+import { Achievements } from './pages/Achievements';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CalendarView } from './pages/CalendarView';
 import { ProjectsView } from './pages/ProjectsView';
@@ -362,6 +363,7 @@ export default function App() {
               <Route path="/report/:id" element={<ReportDetail />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/edit" element={<ProfileEdit />} />
+              <Route path="/profile/achievements" element={<Achievements />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/calendar" element={<CalendarView />} />
               <Route path="/shift" element={<ShiftDashboard />} />

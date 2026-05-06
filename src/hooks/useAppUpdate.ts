@@ -10,7 +10,18 @@ export const useAppUpdate = () => {
       try {
         const res = await fetch('/version.json?' + new Date().getTime(), { cache: 'no-store' });
         if (!res.ok) return;
-        const data = await res.json();
+        
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<')) {
+          return;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          return;
+        }
         
         if (initialVersion === null) {
           initialVersion = data.version;
@@ -18,7 +29,7 @@ export const useAppUpdate = () => {
           setUpdateAvailable(true);
         }
       } catch (err) {
-        console.error("Failed to check for updates", err);
+        // Only log actual network failures
       }
     };
 

@@ -19,6 +19,8 @@ export const Profile = () => {
   const handleMenuClick = (item: any) => {
     if (item.label === 'アカウント編集') {
       navigate('/profile/edit');
+    } else if (item.label === '自分の実績') {
+      navigate('/profile/achievements');
     } else {
       alert(`${item.label}は現在開発中です。`);
     }
@@ -94,7 +96,6 @@ export const Profile = () => {
           { icon: Bell, label: '通知設定', color: 'text-orange-400', bg: 'bg-orange-50' },
           { icon: Award, label: '自分の実績', color: 'text-yellow-500', bg: 'bg-yellow-50' },
           { icon: User, label: 'アカウント編集', color: 'text-purple-400', bg: 'bg-purple-50' },
-          { icon: Shield, label: 'プライバシーポリシー', color: 'text-blue-400', bg: 'bg-blue-50' },
         ].map((item, idx) => (
           <button 
             key={item.label} 
