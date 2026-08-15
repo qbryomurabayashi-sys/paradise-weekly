@@ -37,6 +37,21 @@ export interface StoreMetrics {
   avgSat: number;
   avgSunHoliday: number;
 
+  // 追加詳細指標
+  redYellowSignal?: number;   // 赤黄シグナル 月平均(%)
+  redYellowWeekday?: number;  // 赤黄シグナル 平日平均(%)
+  redYellowHoliday?: number;  // 赤黄シグナル 土日祝平均(%)
+  avgCutTimeSec?: number;     // 平均カット時間(秒)
+  avgWaitTimeSec?: number;    // 平均待ち時間(秒)
+  maleRatio?: number;         // 男性比率(%)
+  repeatRatio?: number;       // リピート比率(%)
+  seniorRatio?: number;       // シニア割/ツキイチ使用比率(%)
+
+  // 時間帯別 来店数（8時台〜22時台の15区分）
+  h8?: number; h9?: number; h10?: number; h11?: number; h12?: number;
+  h13?: number; h14?: number; h15?: number; h16?: number; h17?: number;
+  h18?: number; h19?: number; h20?: number; h21?: number; h22?: number;
+
   updatedAt?: number;
 }
 

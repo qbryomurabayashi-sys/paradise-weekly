@@ -6,6 +6,7 @@ import { useStoreMetricsStore } from '../store/useStoreMetricsStore';
 import { useShiftStore } from '../store/useShiftStore';
 import { TrendingUp, Save, Search, ChevronDown, ChevronUp, Lock, Unlock, ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import { StoreMetricsRanking } from './StoreMetricsRanking';
+import { StoreAnalytics } from './StoreAnalytics';
 
 interface MetricInputProps {
   label: string;
@@ -48,6 +49,56 @@ const MetricInput = ({ label, field, storeId, isEditing, currentValue, step = "1
   );
 };
 
+// 秒数 <-> mm:ss 変換
+const secToMMSS = (sec: any) => {
+  const n = Number(sec);
+  if (!n || n <= 0) return '';
+  const m = Math.floor(n / 60);
+  const s = Math.round(n % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+const mmssToSec = (str: string) => {
+  const t = str.trim();
+  if (!t) return 0;
+  if (t.includes(':')) {
+    const [m, s] = t.split(':');
+    return (Number(m) || 0) * 60 + (Number(s) || 0);
+  }
+  return Number(t) || 0; // 数値のみは秒として扱う
+};
+
+// mm:ss 形式の時間入力（秒数で保存）
+const TimeInput = ({ label, field, storeId, isEditing, currentValue, editData, onEditChange, isMasked }: MetricInputProps) => {
+  const stored = editData[storeId]?.[field];
+  const displaySec = stored !== undefined && stored !== '' ? stored : currentValue;
+  if (!isEditing) {
+    return (
+      <div className="flex justify-between items-center py-1.5 border-b border-dashed border-line secure-unselectable select-none">
+        <span className="text-sm font-bold text-ink-soft">{label}</span>
+        {isMasked ? (
+          <span className="text-xs font-black tracking-widest text-qb-blue/50 bg-qb-navy/5 px-2 py-0.5 rounded blur-[2.5px] select-none secure-unselectable cursor-not-allowed" title="機密マスク有効">**:**</span>
+        ) : (
+          <span className="tabular text-sm font-black text-ink">{secToMMSS(currentValue) || '--:--'}</span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex justify-between items-center gap-2 py-1.5 border-b border-dashed border-line">
+      <span className="text-sm font-bold text-ink-soft shrink-0">{label}</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="mm:ss"
+        onFocus={(e) => e.target.select()}
+        className="tabular w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+        defaultValue={secToMMSS(displaySec)}
+        onBlur={(e) => onEditChange(storeId, field, String(mmssToSec(e.target.value)))}
+      />
+    </div>
+  );
+};
+
 // Diagonal repeat watermark background
 const SecurityWatermark = () => {
   return (
@@ -83,7 +134,7 @@ export const StoreMetrics = () => {
 
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'input' | 'ranking'>('ranking');
+  const [activeTab, setActiveTab] = useState<'input' | 'ranking' | 'analytics'>('ranking');
   const [isMasked, setIsMasked] = useState(true);
   const [windowFocused, setWindowFocused] = useState(true);
 
@@ -241,7 +292,7 @@ export const StoreMetrics = () => {
             />
           )}
         </div>
-        <div className="grid grid-cols-2 sm:flex gap-1.5 bg-canvas p-1 rounded-xl">
+        <div className="grid grid-cols-3 sm:flex gap-1.5 bg-canvas p-1 rounded-xl">
           <button
             onClick={() => setActiveTab('input')}
             className={`tap px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'input' ? 'bg-white text-qb-blue shadow-sm' : 'text-ink-soft hover:text-ink'}`}
@@ -253,6 +304,12 @@ export const StoreMetrics = () => {
             className={`tap px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'ranking' ? 'bg-white text-qb-blue shadow-sm' : 'text-ink-soft hover:text-ink'}`}
           >
             ランキング
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`tap px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'analytics' ? 'bg-white text-qb-blue shadow-sm' : 'text-ink-soft hover:text-ink'}`}
+          >
+            分析
           </button>
         </div>
       </div>
@@ -399,13 +456,52 @@ export const StoreMetrics = () => {
                   </div>
                 </div>
 
+                {/* 品質・稼働指標 */}
+                <div className="bg-white/50 p-3 rounded-xl border border-white">
+                  <h3 className="text-xs font-black text-qb-blue mb-2 uppercase tracking-wider">品質・稼働指標</h3>
+                  <div className="grid grid-cols-2 gap-x-4">
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄シグナル月平均(%)" field="redYellowSignal" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowSignal} step="0.1" isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 平日(%)" field="redYellowWeekday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowWeekday} step="0.1" isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 土日祝(%)" field="redYellowHoliday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowHoliday} step="0.1" isMasked={isMasked} />
+                    <TimeInput editData={editData} onEditChange={handleEditChange} label="平均カット時間" field="avgCutTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgCutTimeSec} isMasked={isMasked} />
+                    <TimeInput editData={editData} onEditChange={handleEditChange} label="平均待ち時間" field="avgWaitTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgWaitTimeSec} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="男性比率(%)" field="maleRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.maleRatio} step="0.1" isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="リピート比率(%)" field="repeatRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.repeatRatio} step="0.1" isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="シニア割/ツキイチ(%)" field="seniorRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.seniorRatio} step="0.1" isMasked={isMasked} />
+                  </div>
+                </div>
+
+                {/* 時間帯別 来店数 */}
+                <div className="bg-white/50 p-3 rounded-xl border border-white">
+                  <h3 className="text-xs font-black text-qb-cyan mb-2 uppercase tracking-wider">時間帯別 来店数</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4">
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="8-9時" field="h8" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h8} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="9-10時" field="h9" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h9} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="10-11時" field="h10" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h10} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="11-12時" field="h11" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h11} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="12-13時" field="h12" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h12} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="13-14時" field="h13" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h13} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="14-15時" field="h14" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h14} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="15-16時" field="h15" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h15} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="16-17時" field="h16" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h16} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="17-18時" field="h17" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h17} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="18-19時" field="h18" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h18} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="19-20時" field="h19" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h19} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="20-21時" field="h20" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h20} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="21-22時" field="h21" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h21} isMasked={isMasked} />
+                    <MetricInput editData={editData} onEditChange={handleEditChange} label="22-23時" field="h22" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.h22} isMasked={isMasked} />
+                  </div>
+                </div>
+
               </div>
             </GlassCard>
           );
         })}
         </div>
-      ) : (
+      ) : activeTab === 'ranking' ? (
         <StoreMetricsRanking stores={filteredStores} metrics={metrics} selectedMonth={rankingMonth} isMasked={isMasked} />
+      ) : (
+        <StoreAnalytics stores={filteredStores} metrics={metrics} selectedMonth={rankingMonth} isMasked={isMasked} />
       )}
     </div>
   );

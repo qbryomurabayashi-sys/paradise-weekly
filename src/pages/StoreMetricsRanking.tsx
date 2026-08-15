@@ -1,7 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { RankBar, RatingStars, DeltaBadge, IconMeter } from '../components/ui/Indicators';
-import { Trophy, Users, User, Star, TrendingUp, Lock, Percent, Flame } from 'lucide-react';
+import { Trophy, Users, User, Star, TrendingUp, Lock, Percent, Flame, Scissors, Clock, Repeat, Activity } from 'lucide-react';
+
+const secToMMSS = (sec?: number) => {
+  if (sec == null || isNaN(sec) || sec <= 0) return '-';
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
 
 interface Props {
   stores: any[];
@@ -215,6 +222,42 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
       const rate = metric.googleReviewCurrent - prevMetric.googleReviewCurrent;
       const sign = rate > 0 ? '+' : '';
       return { store, rate, text: sign + rate.toFixed(1) };
+    }).sort((a, b) => b.rate - a.rate);
+  }, [filteredStores, metrics, selectedMonth]);
+
+  // 赤黄シグナル月平均（高いほど上位）
+  const signalRanking = useMemo(() => {
+    return filteredStores.map(store => {
+      const metric = metrics.find(m => m.storeId === store.id && m.yearMonth === selectedMonth);
+      if (!metric || metric.redYellowSignal == null) return { store, rate: 0, text: '-' };
+      return { store, rate: metric.redYellowSignal, text: metric.redYellowSignal.toFixed(1) + '%' };
+    }).sort((a, b) => b.rate - a.rate);
+  }, [filteredStores, metrics, selectedMonth]);
+
+  // 平均カット時間（短いほど上位）
+  const cutTimeRanking = useMemo(() => {
+    return filteredStores.map(store => {
+      const metric = metrics.find(m => m.storeId === store.id && m.yearMonth === selectedMonth);
+      if (!metric || !metric.avgCutTimeSec) return { store, rate: 0, text: '-' };
+      return { store, rate: metric.avgCutTimeSec, text: secToMMSS(metric.avgCutTimeSec) };
+    }).sort((a, b) => a.rate - b.rate);
+  }, [filteredStores, metrics, selectedMonth]);
+
+  // 平均待ち時間（短いほど上位）
+  const waitTimeRanking = useMemo(() => {
+    return filteredStores.map(store => {
+      const metric = metrics.find(m => m.storeId === store.id && m.yearMonth === selectedMonth);
+      if (!metric || !metric.avgWaitTimeSec) return { store, rate: 0, text: '-' };
+      return { store, rate: metric.avgWaitTimeSec, text: secToMMSS(metric.avgWaitTimeSec) };
+    }).sort((a, b) => a.rate - b.rate);
+  }, [filteredStores, metrics, selectedMonth]);
+
+  // リピート比率（高いほど上位）
+  const repeatRanking = useMemo(() => {
+    return filteredStores.map(store => {
+      const metric = metrics.find(m => m.storeId === store.id && m.yearMonth === selectedMonth);
+      if (!metric || metric.repeatRatio == null) return { store, rate: 0, text: '-' };
+      return { store, rate: metric.repeatRatio, text: metric.repeatRatio.toFixed(1) + '%' };
     }).sort((a, b) => b.rate - a.rate);
   }, [filteredStores, metrics, selectedMonth]);
 
@@ -459,6 +502,20 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
           {renderRankingList('曜日別 スタッフの忙しさ', dayRanking, <Flame size={18} />, daySelect, true, 'busy')}
           {renderRankingList('口コミスコア', googleRanking, <Star size={18} />, null, false, 'stars')}
           {renderRankingList('口コミ前月比', googleGrowthRanking, <TrendingUp size={18} />, null, false, 'delta')}
+        </div>
+      </section>
+
+      {/* 品質・スピード ランキング */}
+      <section>
+        <h2 className="text-lg font-bold text-ink mb-4 flex items-center gap-2">
+          <Activity className="text-qb-cyan" size={20} /> 品質・スピード ランキング
+        </h2>
+        <p className="text-xs font-bold text-ink-soft mb-4 -mt-2">※カット時間・待ち時間は「短いほど上位」です。</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+          {renderRankingList('赤黄シグナル月平均', signalRanking, <Percent size={18} />, null, false)}
+          {renderRankingList('平均カット時間（短い順）', cutTimeRanking, <Scissors size={18} />, null, false)}
+          {renderRankingList('平均待ち時間（短い順）', waitTimeRanking, <Clock size={18} />, null, false)}
+          {renderRankingList('リピート比率', repeatRanking, <Repeat size={18} />, null, false)}
         </div>
       </section>
     </div>

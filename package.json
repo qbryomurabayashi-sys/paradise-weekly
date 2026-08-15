@@ -28,6 +28,7 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.1",
     "react-simple-wysiwyg": "^3.4.1",
+    "recharts": "^3.10.1",
     "vite": "^6.2.0",
     "zustand": "^5.0.12"
   },
