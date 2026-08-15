@@ -1,0 +1,192 @@
+# =============================================================================
+# Design Tokens — 管理者共有ツールAPP
+# Source: QB HOUSE / QB Net Co., Ltd. Brand Design Policy VER 2.0 (2022.11.1)
+# 機械可読なトークン定義。詳細な運用ルールは Design.md を参照。
+# 直値のハードコード禁止。UI からは semantic / tailwind クラス経由で参照する。
+# =============================================================================
+
+meta:
+  name: 管理者共有ツールAPP Design System
+  version: 2.0.0
+  brand: QB HOUSE
+  philosophy: LESS IS MORE
+  voice: "Come alive, be yourself!"
+  updated: 2026-08-15
+
+# -----------------------------------------------------------------------------
+# 1. Brand palette（原典の実測 RGB を HEX 化）
+# -----------------------------------------------------------------------------
+color:
+  brand:
+    navy:      { hex: "#00004B", rgb: [0, 0, 75],     cmyk: "C100 M100 Y0 K60", pantone: "2955U", dic: "F6",  role: 基幹色 }
+    blue_dark: { hex: "#00327D", rgb: [0, 50, 125],   cmyk: "C100 M80 Y0 K30",  pantone: "2945U", dic: "F45", role: 濃青 }
+    blue:      { hex: "#005AAF", rgb: [0, 90, 175],   cmyk: "C100 M60 Y0 K0",   pantone: "3005C", dic: "579", role: 主操作色 }
+    blue_mid:  { hex: "#0082CD", rgb: [0, 130, 205],  cmyk: "C95 M30 Y0 K0",    pantone: "3005C", dic: "640", role: 中間青 }
+    cyan:      { hex: "#00A5EB", rgb: [0, 165, 235],  cmyk: "C90 M0 Y0 K0",     pantone: "ProcessCyan", dic: "577", role: アクセント/CTA }
+    yellow:    { hex: "#FAF028", rgb: [250, 240, 40], cmyk: "C5 M0 Y85 K0",     pantone: "3965U", dic: "597", role: 注意 }
+    red:       { hex: "#E60000", rgb: [230, 0, 0],    cmyk: "C0 M100 Y100 K0",  pantone: "206U",  dic: "563", role: 警告/エラー }
+    gray:      { hex: "#7D7D7D", rgb: [125, 125, 125],cmyk: "C65 M50 Y45 K0",   pantone: "CoolGray11", role: 補助/境界 }
+    gray_light:{ hex: "#DADADA", rgb: [218, 218, 218],cmyk: "C17 M13 Y13 K0",   pantone: "CoolGray1",  role: 罫線/無効 }
+    white:     { hex: "#FFFFFF", rgb: [255, 255, 255], role: 面 }
+
+  # 2. Semantic roles（UI から参照するのはこちら）
+  semantic:
+    primary:   "#005AAF"   # brand.blue
+    accent:    "#00A5EB"   # brand.cyan
+    ink:       "#00004B"   # brand.navy（本文・見出し）
+    ink_soft:  "#3A4A6B"   # 本文セカンダリ
+    surface:   "#FFFFFF"
+    canvas:    "#F4F8FC"   # ページ背景（極淡ブルーグレー）
+    canvas_2:  "#EAF2FB"   # 背景グラデ下端
+    muted:     "#7D7D7D"
+    line:      "#E4EBF2"   # hairline
+    success:   "#17B26A"
+    warning:   "#FAF028"   # 上に載せる文字は ink(navy)
+    danger:    "#E60000"
+    on_primary: "#FFFFFF"
+    on_accent:  "#FFFFFF"
+    on_warning: "#00004B"
+
+  # 3. Legacy remap（既存 paradise-* クラスは名を変えず値だけ差し替え）
+  legacy_remap:
+    paradise-ocean:    "#005AAF"   # 主操作色
+    paradise-sunset:   "#00A5EB"   # アクセント/CTA
+    paradise-blue:     "#0082CD"
+    paradise-mint:     "#17B26A"   # success として温存
+    paradise-lavender: "#00327D"
+    paradise-pink:     "#C7DCEF"   # 淡ブルー装飾
+
+# -----------------------------------------------------------------------------
+# 4. Typography
+# -----------------------------------------------------------------------------
+typography:
+  font_family:
+    sans: '"Red Hat Display", "Noto Sans JP", system-ui, sans-serif'
+    jp:   '"Noto Sans JP", system-ui, sans-serif'
+    numeric: '"Red Hat Display", system-ui, sans-serif'  # tabular-nums 併用
+  weights: [400, 500, 700, 900]
+  numeric_feature: "tabular-nums"
+  min_font_px: 12          # これ未満は使用禁止
+  scale:                    # size_px / line_height / weight
+    display: { size: 36, line: 1.05, weight: 900 }
+    h1:      { size: 24, line: 1.25, weight: 700 }
+    h2:      { size: 20, line: 1.30, weight: 700 }
+    h3:      { size: 17, line: 1.35, weight: 700 }
+    body:    { size: 15, line: 1.60, weight: 400 }
+    label:   { size: 13, line: 1.40, weight: 500 }
+    caption: { size: 12, line: 1.40, weight: 500 }
+
+# -----------------------------------------------------------------------------
+# 5. Spacing / Radius / Shadow / Motion
+# -----------------------------------------------------------------------------
+spacing:            # px, 4pxグリッド
+  scale: [4, 8, 12, 16, 20, 24, 32, 40, 48, 64]
+
+radius:             # px
+  sm: 8
+  md: 12
+  lg: 16
+  xl: 20
+  "2xl": 24
+  pill: 9999
+  card_default: 16
+
+shadow:
+  sm: "0 1px 2px rgba(0,50,125,0.06)"
+  md: "0 4px 12px -2px rgba(0,50,125,0.10)"
+  lg: "0 16px 32px -8px rgba(0,50,125,0.18)"
+
+glass:
+  bg: "rgba(255,255,255,0.72)"
+  blur: "10px"
+  border: "rgba(255,255,255,0.6)"
+
+motion:
+  duration_ms: { fast: 150, base: 200, slow: 250 }
+  easing: "cubic-bezier(0.16, 1, 0.3, 1)"   # ease-out
+  respect_reduced_motion: true
+  banned: ["page rotateY 3D transition", "常時ループする背景発光blob"]
+
+# -----------------------------------------------------------------------------
+# 6. Layout — Bento Grid
+# -----------------------------------------------------------------------------
+bento:
+  columns: { base: 1, sm: 2, lg: 4 }
+  min_tile_px: 150
+  gap_px: { base: 12, sm: 16 }
+  hero_span: { col: 2, row: 2 }
+  rule: 1タイル=1指標+1可視化+1ラベル
+
+# -----------------------------------------------------------------------------
+# 7. Components（プリミティブ仕様）
+# -----------------------------------------------------------------------------
+components:
+  RatingStars:
+    use: Google口コミ評価
+    props: { value: number, max: 5, showValue: bool }
+    fill_color: "#FAF028"
+    empty_color: "#DADADA"
+    partial: 0.1刻みで部分塗り
+  ProgressRing:
+    use: 達成率
+    thresholds: { ">=100": success, "80-99": accent, "<80": warning }
+    center_label: percent
+  MetricBar:
+    use: 前年比 / 曜日別 / 比率
+    baseline: 100%（前年基準を点線表示）
+    positive: success
+    negative: danger
+  RankBar:
+    use: 店舗ランキング（相対長バー）
+    top3: [gold, silver, bronze]
+  DeltaBadge:
+    positive: { symbol: "▲", color: success }
+    negative: { symbol: "▼", color: danger }
+  StatTile:
+    slots: [label, value(display), delta, indicator]
+  Sheet:
+    use: モバイル確認/フォーム。native alert/confirm の置換
+    safe_area: "env(safe-area-inset-bottom)"
+  Toast:
+    use: 成功/失敗フィードバック（native alert 置換）
+
+# -----------------------------------------------------------------------------
+# 8. Mobile-first rules（必須）
+# -----------------------------------------------------------------------------
+mobile:
+  min_tap_px: 44
+  min_font_px: 12
+  replace_native_dialogs: true      # alert/confirm/prompt -> Toast/Sheet
+  textarea_autogrow: true
+  stack_grid_cols_2_on_mobile: true
+  bottom_sheet_for_forms: true
+  input_attrs: [inputMode, enterKeyHint, autoComplete, "autoCapitalize=off"]
+  login_form_semantics: true        # <form> + Enter送信
+  avoid_hover_only_affordances: true
+  avoid_fixed_vh_panels: true       # h-[90vh] 等はキーボード競合
+
+# -----------------------------------------------------------------------------
+# 9. Accessibility
+# -----------------------------------------------------------------------------
+a11y:
+  contrast_min: 4.5
+  yellow_text_color: "#00004B"      # 黄色面の文字は navy（白抜き禁止）
+  state_not_color_only: true        # アイコン/記号併用
+  keep_focus_ring: true
+  reduced_motion: honor
+
+# -----------------------------------------------------------------------------
+# 10. PWA
+# -----------------------------------------------------------------------------
+pwa:
+  theme_color: "#00327D"
+  background_color: "#F4F8FC"
+
+# -----------------------------------------------------------------------------
+# 11. Rollout
+# -----------------------------------------------------------------------------
+rollout:
+  phase1: [tokens, fonts, background, glass, pwa_color, primitives, app_shell]
+  phase2: [StoreMetrics, StoreMetricsRanking, ShiftDashboard, LeavePlanDashboard, Achievements]
+  phase3: [PostReport, StaffShiftRequest, KeyPassManagement, CalendarView, ProjectsView, Login]
+  phase4: [sanitize_html, realtime_subscriptions, remove_desktop_only_code]

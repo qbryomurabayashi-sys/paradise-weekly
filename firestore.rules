@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- Global Catch-all: Deny all access by default ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helper Functions ---
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function getUser(uid) { return get(/databases/$(database)/documents/users/$(uid)).data; }
+    function getRole() { return getUser(request.auth.uid).role; }
+    function isBM() { return isSignedIn() && getRole() == 'BM'; }
+    function isAM() { return isSignedIn() && getRole() == 'AM'; }
+    function isStoreManager() { return isSignedIn() && getRole() == '店長'; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      
+      // Permit creation of profile with default role "店長" or if creator is BM / Admin
+      allow create: if isSignedIn() && (
+        (request.auth.uid == userId && incoming().role == '店長') ||
+        isBM()
+      );
+      
+      // Allow user updates: regular users can only change non-sensitive profile parameters,
+      // while only admins (BM) can edit roles, store assignments, or sensitive settings.
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'lastLoginAt'])) ||
+        isBM()
+      );
+      
+      allow delete: if isBM();
+
+      // Notifications Subcollection under Users
+      match /notifications/{notificationId} {
+        allow get, list, update, delete: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && incoming().keys().hasAll(['isRead', 'createdAt']);
+      }
+    }
+
+    // --- Stores Master ---
+    match /stores/{storeId} {
+      allow read: if isSignedIn();
+      allow write: if isBM();
+    }
+
+    // --- Staff Master ---
+    match /staffs/{staffId} {
+      allow read: if isSignedIn();
+      allow write: if isBM();
+    }
+
+    // --- Shift Requests ---
+    match /shift_requests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (incoming().submittedBy == request.auth.uid || isBM());
+      allow update, delete: if isSignedIn() && (existing().submittedBy == request.auth.uid || isBM() || isAM());
+    }
+
+    // --- Leave Plans ---
+    match /leave_plans/{planId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isBM() || isAM() || isStoreManager());
+    }
+
+    // --- Store Metrics ---
+    match /storeMetrics/{metricId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isBM() || isAM() || (
+        isStoreManager() && getUser(request.auth.uid).storeName == get(/databases/$(database)/documents/stores/$(incoming().storeId)).data.name
+      ));
+    }
+
+    // --- Weekly Reports ---
+    match /reports/{reportId} {
+      // Draft reports are isolated strictly to their creator or BM (admin override)
+      allow get: if isSignedIn() && (existing().status != 'draft' || existing().authorId == request.auth.uid || isBM());
+      // Allow list for signed in users (draft filtering is enforced in application logic)
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && incoming().authorId == request.auth.uid;
+      
+      // Restrict modification to creator or BM, or allow external safe writes limited ONLY to commentCount, reactions, or readBy arrays
+      allow update: if isSignedIn() && (
+        (existing().authorId == request.auth.uid && incoming().authorId == existing().authorId) ||
+        isBM() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['reactions', 'readBy', 'commentCount', 'weekNumber'])
+      );
+      allow delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
+
+      // Comments Subcollection under Reports
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        // Prevent orphaned comment injection by ensuring the parent report document exists
+        allow create: if isSignedIn() && 
+                      incoming().authorId == request.auth.uid && 
+                      exists(/databases/$(database)/documents/reports/$(reportId));
+        allow update: if isSignedIn() && (
+          existing().authorId == request.auth.uid ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['reactions'])
+        );
+        allow delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
+      }
+    }
+
+    // --- Space / Calendar Tasks ---
+    match /tasks/{taskId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isBM() || isAM() || isStoreManager());
+    }
+
+    // --- Key / Access Card Management ---
+    match /key_passes/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isBM() || isAM() || isStoreManager() || request.auth.uid == userId);
+    }
+
+    match /store_key_passes/{storeId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isBM() || isAM() || (
+        isStoreManager() && getUser(request.auth.uid).storeName == get(/databases/$(database)/documents/stores/$(storeId)).data.name
+      ));
+    }
+
+    // --- Shared Projects & Chat groups ---
+    match /projects/{projectId} {
+      allow get: if isSignedIn() && (isBM() || isAM() || request.auth.uid in existing().memberUids || existing().authorId == request.auth.uid);
+      allow list: if isSignedIn() && (isBM() || isAM() || request.auth.uid in existing().memberUids || existing().authorId == request.auth.uid);
+      allow write: if isSignedIn() && (isBM() || isAM() || isStoreManager());
+      
+      match /messages/{messageId} {
+        // Only members or admins can read messages
+        allow read: if isSignedIn() && (isBM() || isAM() || request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.memberUids);
+        // Verify parent project group exists before allowing chat insertion
+        allow create: if isSignedIn() && 
+                      incoming().authorId == request.auth.uid && 
+                      exists(/databases/$(database)/documents/projects/$(projectId));
+        allow update, delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
+      }
+    }
+
+    // --- AI Generated Monthly Insights & Announcements ---
+    match /monthly_insights/{insightId} {
+      allow read: if isSignedIn();
+      allow write: if isBM();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create: if isBM() || isAM();
+      // Allow users to update seenBy and hiddenBy for read receipts and settings
+      allow update: if isBM() || isAM() || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['seenBy', 'hiddenBy']));
+      allow delete: if isBM();
+    }
+  }
+}

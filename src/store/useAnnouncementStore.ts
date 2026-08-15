@@ -1,0 +1,115 @@
+import { create } from 'zustand';
+import { db } from '../lib/firebase';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, getDoc, limit } from 'firebase/firestore';
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  createdAt: string;
+  seenBy: string[];
+  hiddenBy: string[];
+  isImportant: boolean;
+  displayUntil: string;
+}
+
+interface AnnouncementState {
+  announcements: Announcement[];
+  init: () => () => void;
+  addAnnouncement: (data: Omit<Announcement, 'id' | 'createdAt' | 'seenBy' | 'hiddenBy'>) => Promise<void>;
+  markAsSeen: (id: string, userId: string) => Promise<void>;
+  hideAnnouncement: (id: string, userId: string) => Promise<void>;
+  deleteAnnouncement: (id: string) => Promise<void>;
+}
+
+let _announceUnsub: any = null;
+
+export const useAnnouncementStore = create<AnnouncementState>((set, get) => ({
+  announcements: [],
+  init: () => {
+    if (_announceUnsub) return () => {};
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(100));
+    _announceUnsub = onSnapshot(q, (snapshot) => {
+      const now = new Date();
+      const activeAnnouncements: Announcement[] = [];
+
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() as Omit<Announcement, 'id'>;
+        const ann = { id: docSnap.id, ...data };
+        
+        // Auto-delete if expired
+        if (ann.displayUntil && new Date(ann.displayUntil) < now) {
+          if (ann.id && typeof ann.id === 'string' && ann.id.trim().length > 0) {
+            deleteDoc(doc(db, 'announcements', ann.id)).catch(console.error);
+          }
+        } else {
+          activeAnnouncements.push(ann);
+        }
+      });
+      set({ announcements: activeAnnouncements });
+    }, (error) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        document.dispatchEvent(new CustomEvent('quota-exceeded'));
+      } else {
+      console.error('Announcements snapshot error:', error);
+      }
+    });
+    return () => {};
+  },
+  addAnnouncement: async (data) => {
+    await addDoc(collection(db, 'announcements'), {
+      ...data,
+      createdAt: new Date().toISOString(),
+      seenBy: [],
+      hiddenBy: [],
+    });
+  },
+  markAsSeen: async (id, userId) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
+    const { announcements } = get();
+    const ann = announcements.find(a => a.id === id);
+    if (!ann) return;
+    
+    if (!ann.seenBy?.includes(userId)) {
+      const newSeenBy = [...(ann.seenBy || []), userId];
+      await updateDoc(doc(db, 'announcements', id), { seenBy: newSeenBy });
+
+      // Notify Author
+      if (ann.authorId && ann.authorId !== userId) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', userId));
+          const userName = userDoc.exists() ? userDoc.data()?.name || '誰か' : '誰か';
+          await addDoc(collection(db, 'users', ann.authorId, 'notifications'), {
+              type: 'read_announcement',
+              fromUserId: userId,
+              fromUserName: userName,
+              reportId: id, // reuse reportId field for navigation or linking
+              message: `${userName}さんがあなたのお知らせを「見たよ」しました`,
+              isRead: false,
+              createdAt: new Date().toISOString()
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  },
+  hideAnnouncement: async (id, userId) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
+    const { announcements } = get();
+    const ann = announcements.find(a => a.id === id);
+    if (!ann) return;
+    
+    if (!ann.hiddenBy?.includes(userId)) {
+      const newHiddenBy = [...(ann.hiddenBy || []), userId];
+      await updateDoc(doc(db, 'announcements', id), { hiddenBy: newHiddenBy });
+    }
+  },
+  deleteAnnouncement: async (id) => {
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return;
+    await deleteDoc(doc(db, 'announcements', id));
+  }
+}));

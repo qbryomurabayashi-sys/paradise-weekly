@@ -1,0 +1,410 @@
+import { create } from 'zustand';
+import { auth, db } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, limit } from 'firebase/firestore';
+import { getFiscalWeek } from '../lib/dateUtils';
+
+export interface Reaction {
+  type: string;
+  count: number;
+  userIds: string[];
+  userNames?: string[];
+}
+
+export interface Report {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: '店長' | 'AM' | 'BM';
+  authorPhotoURL?: string;
+  storeName: string;
+  weekNumber: number;
+  year: number;
+  keep: string;
+  problem_gap: string;
+  problem_ideal: string;
+  try_who: string;
+  try_when: string;
+  try_what: string;
+  try_why: string;
+  reactions: Reaction[];
+  commentCount: number;
+  readBy?: string[];
+  createdAt: any;
+  status?: 'draft' | 'published';
+  scheduledFor?: string;
+  tasks?: any[];
+}
+
+export interface CommentReaction {
+  type: string;
+  userIds: string[];
+  userNames?: string[];
+}
+
+export interface Comment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: '店長' | 'AM' | 'BM';
+  authorPhotoURL?: string;
+  text: string;
+  reactions?: CommentReaction[];
+  createdAt: string;
+}
+
+export function getTimestampMillis(createdAt: any): number {
+  if (!createdAt) return 0;
+  if (typeof createdAt === 'number') return createdAt;
+  if (typeof createdAt === 'object' && typeof createdAt.toDate === 'function') {
+    return createdAt.toDate().getTime();
+  }
+  if (typeof createdAt === 'object' && typeof createdAt.seconds === 'number') {
+    return createdAt.seconds * 1000;
+  }
+  if (typeof createdAt === 'string') {
+    const parsed = new Date(createdAt).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+interface ReportState {
+  reports: Report[];
+  filterRole: string | null;
+  setFilterRole: (role: string | null) => void;
+  addReport: (report: Omit<Report, 'id' | 'reactions' | 'commentCount' | 'createdAt'> & { status?: 'draft' | 'published' }) => Promise<void>;
+  updateReport: (reportId: string, updates: Partial<Report>) => Promise<void>;
+  deleteReport: (reportId: string) => Promise<void>;
+  addComment: (reportId: string, comment: Omit<Comment, 'id' | 'createdAt'>) => Promise<void>;
+  getComments: (reportId: string, callback: (comments: Comment[]) => void) => () => void;
+  addReaction: (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => Promise<void>;
+  addCommentReaction: (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => Promise<void>;
+  markAsRead: (reportId: string, userId: string) => Promise<void>;
+  init: () => () => void;
+}
+
+let _reportsUnsub: any = null;
+
+export const useReportStore = create<ReportState>((set, get) => ({
+  reports: [],
+  filterRole: null,
+  setFilterRole: (role) => set({ filterRole: role }),
+  addReport: async (report) => {
+    try {
+      const nowIso = new Date().toISOString();
+      const reportPayload = {
+        ...report,
+        status: report.status || 'published',
+        reactions: [],
+        commentCount: 0,
+        createdAt: nowIso
+      };
+      const docRef = await addDoc(collection(db, 'reports'), reportPayload);
+      
+      const newReport: Report = {
+        id: docRef.id,
+        ...reportPayload
+      };
+      
+      const current = get().reports;
+      if (!current.some(r => r.id === newReport.id)) {
+        const next = [newReport, ...current];
+        next.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt));
+        set({ reports: next });
+      }
+    } catch (error) {
+      console.error('Failed to add report', error);
+      throw error;
+    }
+  },
+  updateReport: async (reportId, updates) => {
+    try {
+      await updateDoc(doc(db, 'reports', reportId), updates);
+      const current = get().reports;
+      const idx = current.findIndex(r => r.id === reportId);
+      if (idx !== -1) {
+        const next = [...current];
+        next[idx] = { ...next[idx], ...updates };
+        next.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt));
+        set({ reports: next });
+      }
+    } catch (error) {
+      console.error('Failed to update report', error);
+      throw error;
+    }
+  },
+  deleteReport: async (reportId) => {
+    try {
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'reports', reportId));
+      const current = get().reports;
+      set({ reports: current.filter(r => r.id !== reportId) });
+    } catch (error) {
+      console.error('Failed to delete report', error);
+      throw error;
+    }
+  },
+  addComment: async (reportId, comment) => {
+    try {
+      const dbCommentsRef = collection(db, 'reports', reportId, 'comments');
+      await addDoc(dbCommentsRef, {
+        ...comment,
+        createdAt: new Date().toISOString()
+      });
+      // Increment comment count
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (reportDoc.exists()) {
+        const data = reportDoc.data() as Report;
+        const currentCount = data.commentCount || 0;
+        await updateDoc(reportRef, { commentCount: currentCount + 1 });
+        
+        // Add Notification
+        if (data.authorId !== comment.authorId) {
+          const { auth: authObj } = await import('../lib/firebase');
+          await addDoc(collection(db, 'users', data.authorId, 'notifications'), {
+            type: 'comment',
+            fromUserId: comment.authorId,
+            fromUserName: comment.authorName,
+            reportId: reportId,
+            message: `${comment.authorName || '誰か'}さんがコメントしました`,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Comment error:', e);
+      alert('コメントの投稿に失敗しました');
+    }
+  },
+  getComments: (reportId, callback) => {
+    const q = query(collection(db, 'reports', reportId, 'comments'), orderBy('createdAt', 'asc'));
+    return onSnapshot(q, (snapshot) => {
+      const cmts = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Comment[];
+      callback(cmts);
+    }, (error) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        document.dispatchEvent(new CustomEvent('quota-exceeded'));
+      } else {
+      console.error('Comments snapshot error:', error);
+      }
+    });
+  },
+  addReaction: async (reportId: string, reactionType: string, user: { uid: string, name?: string, role?: string }) => {
+    try {
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (!reportDoc.exists()) throw new Error('Report not found');
+
+      const report = reportDoc.data() as Report;
+      const reactions = [...(report.reactions || [])];
+      const existingReactionIndex = reactions.findIndex(r => r.type === reactionType);
+
+      let wasAdded = false;
+      const userId = user.uid;
+      
+      if (existingReactionIndex > -1) {
+        const userIds = [...reactions[existingReactionIndex].userIds];
+        const userNames = [...(reactions[existingReactionIndex].userNames || [])];
+        const userIndex = userIds.indexOf(userId);
+        
+        if (userIndex > -1) {
+          // Remove reaction (toggle off)
+          userIds.splice(userIndex, 1);
+          if (userNames[userIndex]) userNames.splice(userIndex, 1);
+          reactions[existingReactionIndex] = {
+            ...reactions[existingReactionIndex],
+            userIds,
+            userNames,
+            count: Math.max(0, reactions[existingReactionIndex].count - 1)
+          };
+          // Remove the reaction type if count is 0
+          if (reactions[existingReactionIndex].count === 0) {
+            reactions.splice(existingReactionIndex, 1);
+          }
+        } else {
+          // Add reaction
+          userIds.push(userId);
+          userNames.push(user.name || '匿名');
+          reactions[existingReactionIndex] = {
+            ...reactions[existingReactionIndex],
+            userIds,
+            userNames,
+            count: reactions[existingReactionIndex].count + 1
+          };
+          wasAdded = true;
+        }
+      } else {
+        reactions.push({ type: reactionType, count: 1, userIds: [userId], userNames: [user.name || '匿名'] });
+        wasAdded = true;
+      }
+
+      await updateDoc(reportRef, { reactions });
+      
+      if (wasAdded && report.authorId !== userId) {
+        await addDoc(collection(db, 'users', report.authorId, 'notifications'), {
+           type: 'reaction',
+           fromUserId: userId,
+           fromUserName: user.name || '誰か',
+           reportId: reportId,
+           message: `${user.name || '誰か'}さんがリアクションしました`,
+           isRead: false,
+           createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error: any) {
+      console.error('Reaction error:', error);
+      if (error.code === 'permission-denied') {
+        alert('データを更新する権限がありません。管理者にお問い合わせください。');
+      } else {
+        alert('エラーが発生しました: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+      throw error;
+    }
+  },
+  addCommentReaction: async (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => {
+    try {
+      const commentRef = doc(db, 'reports', reportId, 'comments', commentId);
+      const commentDoc = await getDoc(commentRef);
+      if (!commentDoc.exists()) throw new Error('Comment not found');
+
+      const comment = commentDoc.data() as Comment;
+      const reactions = [...(comment.reactions || [])];
+      const existingReactionIndex = reactions.findIndex(r => r.type === reactionType);
+
+      let wasAdded = false;
+      const userId = user.uid;
+      
+      if (existingReactionIndex > -1) {
+        const userIds = [...reactions[existingReactionIndex].userIds];
+        const userNames = [...(reactions[existingReactionIndex].userNames || [])];
+        const userIndex = userIds.indexOf(userId);
+
+        if (userIndex > -1) {
+          // Toggle off
+          userIds.splice(userIndex, 1);
+          if (userNames[userIndex]) userNames.splice(userIndex, 1);
+          reactions[existingReactionIndex] = { ...reactions[existingReactionIndex], userIds, userNames };
+        } else {
+          userIds.push(userId);
+          userNames.push(user.name || '匿名');
+          reactions[existingReactionIndex] = { ...reactions[existingReactionIndex], userIds, userNames };
+          wasAdded = true;
+        }
+      } else {
+        reactions.push({ type: reactionType, userIds: [userId], userNames: [user.name || '匿名'] });
+        wasAdded = true;
+      }
+
+      await updateDoc(commentRef, { reactions });
+      
+      if (wasAdded && comment.authorId !== userId) {
+        await addDoc(collection(db, 'users', comment.authorId, 'notifications'), {
+           type: 'reaction',
+           fromUserId: userId,
+           fromUserName: user.name || '誰か',
+           reportId: reportId,
+           message: `${user.name || '誰か'}さんがあなたのコメントにいいねしました`,
+           isRead: false,
+           createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error: any) {
+      console.error('Comment reaction error:', error);
+      if (error.code === 'permission-denied') {
+        alert('コメントに反応する権限がありません。');
+      } else {
+        alert('エラーが発生しました: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+      throw error;
+    }
+  },
+  markAsRead: async (reportId, userId) => {
+    try {
+      const reportRef = doc(db, 'reports', reportId);
+      const reportDoc = await getDoc(reportRef);
+      if (!reportDoc.exists()) return;
+
+      const data = reportDoc.data() as Report;
+      const readBy = [...(data.readBy || [])];
+      
+      if (!readBy.includes(userId)) {
+        readBy.push(userId);
+        await updateDoc(reportRef, { readBy });
+        
+        // Notify Author
+        if (data.authorId !== userId) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userName = userDoc.exists() ? userDoc.data()?.name || '誰か' : '誰か';
+            await addDoc(collection(db, 'users', data.authorId, 'notifications'), {
+               type: 'read',
+               fromUserId: userId,
+               fromUserName: userName,
+               reportId: reportId,
+               message: `${userName}さんがあなたのレポートを「見たよ」しました`,
+               isRead: false,
+               createdAt: new Date().toISOString()
+            });
+          } catch(e) { console.error('notify seen error', e); }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to mark as read', error);
+    }
+  },
+  init: () => {
+    if (_reportsUnsub) return () => {};
+
+    const qReports = query(collection(db, 'reports'), limit(150));
+    
+    if (!_reportsUnsub) {
+      _reportsUnsub = onSnapshot(qReports, (snapshot) => {
+        const rawReports = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          let weekNumber = data.weekNumber;
+          if (data.createdAt) {
+             let d = data.createdAt;
+             if (typeof data.createdAt === 'object' && data.createdAt.toDate) {
+               d = data.createdAt.toDate();
+             } else {
+               d = new Date(data.createdAt);
+             }
+             
+             if (!isNaN(d.getTime())) {
+               const correctWeek = getFiscalWeek(d);
+               
+               if (weekNumber !== correctWeek && data.authorId === auth.currentUser?.uid) {
+                 updateDoc(doc(db, 'reports', docSnap.id), { weekNumber: correctWeek }).catch(e => console.error("Auto update failed:", e));
+                 weekNumber = correctWeek;
+               } else if (weekNumber !== correctWeek) {
+                 weekNumber = correctWeek;
+               }
+             }
+          }
+          return { id: docSnap.id, ...data, weekNumber } as Report;
+        });
+
+        // Filter out drafts that don't belong to the current logged in user
+        const currentUid = auth.currentUser?.uid;
+        const validReports = rawReports.filter(r => r.status !== 'draft' || r.authorId === currentUid);
+
+        // Sort properly using timestamp milliseconds
+        validReports.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt));
+        set({ reports: validReports });
+      }, (error) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        document.dispatchEvent(new CustomEvent('quota-exceeded'));
+      } else {
+      if (error.code !== 'permission-denied') console.error('Reports listener error:', error);
+      }
+    });
+    }
+
+    return () => {};
+  },
+}));

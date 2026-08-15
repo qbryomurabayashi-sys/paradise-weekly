@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   QB HOUSE Design System — tokens (source of truth: Design.md / design-tokens.yaml)
+   Brand Design Policy VER 2.0. Philosophy: LESS IS MORE.
+   NOTE: 既存コードの `paradise-*` クラスは名を変えず値のみブランド色へ remap している。
+   ========================================================================== */
+@theme {
+  /* --- QB brand palette --- */
+  --color-qb-navy: #00004B;
+  --color-qb-blue-dark: #00327D;
+  --color-qb-blue: #005AAF;
+  --color-qb-blue-mid: #0082CD;
+  --color-qb-cyan: #00A5EB;
+  --color-qb-yellow: #FAF028;
+  --color-qb-red: #E60000;
+  --color-qb-gray: #7D7D7D;
+  --color-qb-gray-light: #DADADA;
+
+  /* --- semantic --- */
+  --color-ink: #00004B;
+  --color-ink-soft: #3A4A6B;
+  --color-canvas: #F4F8FC;
+  --color-surface: #FFFFFF;
+  --color-line: #E4EBF2;
+  --color-success: #17B26A;
+  --color-danger: #E60000;
+
+  /* --- legacy remap: paradise-* → QB brand (値のみ差し替え) --- */
+  --color-paradise-ocean: #005AAF;    /* 主操作色 → QB Blue */
+  --color-paradise-sunset: #00A5EB;   /* アクセント/CTA → QB Cyan */
+  --color-paradise-blue: #0082CD;
+  --color-paradise-mint: #17B26A;     /* success として温存 */
+  --color-paradise-lavender: #00327D;
+  --color-paradise-pink: #C7DCEF;
+
+  /* --- typography --- */
+  --font-sans: "Red Hat Display", "Noto Sans JP", system-ui, sans-serif;
+
+  --animate-floating: floating 6s ease-in-out infinite;
+  --animate-fade-in: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  @keyframes floating {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-14px); }
+  }
+  @keyframes fadeIn {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+}
+
+:root {
+  font-family: "Red Hat Display", "Noto Sans JP", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  /* LESS IS MORE: 旧トロピカルアニメ背景 → 静謐なブランド・ブルーグレー */
+  background:
+    radial-gradient(1200px 800px at 100% -10%, rgba(0, 165, 235, 0.10), transparent 60%),
+    radial-gradient(1000px 700px at -10% 110%, rgba(0, 50, 125, 0.08), transparent 60%),
+    linear-gradient(180deg, #F4F8FC 0%, #EAF2FB 100%);
+  background-attachment: fixed;
+  color: #1F2A44;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 数字（KPI/客数/評価）は等幅で桁揃え */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ガラス面：淡背景でも可読なようコントラストを引き上げ */
+@utility glass {
+  background-color: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 12px -2px rgba(0, 50, 125, 0.10);
+}
+
+@utility glass-dark {
+  background-color: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 16px 32px -8px rgba(0, 50, 125, 0.18);
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Bento Grid: mobile 1列 → sm 2列 → lg 4列（Design.md §4） */
+@utility bento-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .bento-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+}
+
+/* 44px タップ領域の最低保証（モバイル入力規約 Design.md §6） */
+@utility tap {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* アクセシビリティ：フォーカスリングを消さない */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-qb-cyan);
+    outline-offset: 2px;
+  }
+}
+
+/* モーション削減設定を尊重 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* 🔒 Anti-Screenshot & Screen Capture Security Rules */
+@media print {
+  body {
+    display: none !important;
+    background: #000000 !important;
+  }
+  html, body, #root {
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+}
+
+.secure-unselectable {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
