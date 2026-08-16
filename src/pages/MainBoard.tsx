@@ -1047,6 +1047,7 @@ export const MainBoard = () => {
                                  : bestType === 'SM' ? 'bg-gradient-to-br from-purple-50 to-white border-2 border-purple-300 shadow-purple-200/20' : '';
                     const bannerColor = bestType === 'BM' ? 'bg-cyan-500' : bestType === 'AM' ? 'bg-blue-500' : 'bg-purple-500';
                     const bannerText = bestType === 'BM' ? '💎 BM BEST KPT' : bestType === 'AM' ? '🔷 AＭ BEST KPT' : '🔮 ＳＭ BEST KPT';
+                    const reactionTotal = report.reactions.filter((r: any) => ['like','learn','copy','great'].includes(r.type)).reduce((s: number, r: any) => s + (r.count || 0), 0);
 
                     return (
                         <div key={report.id} className="relative">
@@ -1060,83 +1061,52 @@ export const MainBoard = () => {
                               onClick={() => navigate(`/report/${report.id}`)}
                               className="cursor-pointer"
                             >
-                            <GlassCard className={`relative overflow-hidden group transition-all duration-300 shadow-sm hover:shadow-md ${isExpanded ? 'p-6' : 'p-3'} ${!report.readBy?.includes(user?.uid || '') ? 'border-l-[6px] border-l-paradise-sunset' : 'border-gray-200/50'} ${cardBg}`}>
-                                {hasBestKpt && (
-                                   <div className={`absolute -right-6 top-4 ${bannerColor} text-white text-xs font-black px-6 py-0.5 shadow-md flex items-center justify-center gap-1 uppercase tracking-widest origin-center rotate-45 z-20`}>
-                                      {bannerText}
-                                   </div>
-                                )}
-                                {/* 投稿日と既読バッジとリアクション */}
-                                <div className="flex items-center justify-between z-10 mb-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                     {report.status === 'draft' && (
-                                       <span className="text-xs font-black text-gray-400 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 flex items-center gap-1">
-                                          下書き <span className="font-normal opacity-80 -ml-0.5">（記入者のみ表示）</span>
-                                       </span>
-                                     )}
-                                     {report.status === 'published' && report.scheduledFor && new Date(report.scheduledFor) > new Date() && (
-                                        <span className="text-xs font-black text-paradise-ocean bg-paradise-ocean/10 border border-paradise-ocean/30 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 flex items-center gap-1">
-                                          <Calendar size={10} /> 予約中({new Date(report.scheduledFor).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute:'2-digit' })}) <span className="font-normal opacity-80 -ml-0.5">（記入者のみ表示）</span>
-                                        </span>
-                                     )}
-                                     <span className="text-xs font-bold text-gray-500 bg-white/80 px-2 py-1 rounded-full shadow-sm border border-gray-100/50 shrink-0">
-                                        {new Date(report.createdAt).toLocaleDateString()}
-                                     </span>
-                                     {!report.readBy?.includes(user?.uid || '') && (
-                                       <span className="flex h-2.5 w-2.5 shrink-0">
-                                          <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-paradise-sunset opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-paradise-sunset"></span>
-                                       </span>
-                                     )}
-                                     {report.reactions.map((reaction, i) => (
-                                       <div key={i} className="flex items-center gap-1 bg-white/90 px-2 py-1 rounded-full shadow-sm border border-gray-100/80 shrink-0">
-                                         {getReactionIcon(reaction.type, 14)}
-                                         <span className="text-xs font-bold text-gray-700 leading-none mt-px">{reaction.count}</span>
-                                       </div>
-                                     ))}
-                                     {report.commentCount > 0 && (
-                                       <div className="flex items-center gap-1 bg-white/90 px-2 py-1 rounded-full shadow-sm border border-gray-100/80 shrink-0">
-                                         <MessageCircle size={14} className="text-blue-400" />
-                                         <span className="text-xs font-bold text-gray-700 leading-none mt-px">{report.commentCount}</span>
-                                       </div>
-                                     )}
-                                  </div>
-                                </div>
+                            <GlassCard className={`relative overflow-hidden group transition-all duration-300 shadow-sm hover:shadow-md ${isExpanded ? 'p-6' : 'px-4 py-2.5'} ${!report.readBy?.includes(user?.uid || '') ? 'border-l-[6px] border-l-qb-cyan' : 'border-gray-200/50'} ${cardBg}`}>
+                                {/* 1行サマリー（折りたたみ時） */}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {!report.readBy?.includes(user?.uid || '') && (
+                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                       <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-qb-cyan opacity-75"></span>
+                                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-qb-cyan"></span>
+                                    </span>
+                                  )}
+                                  <span className="text-xs font-black text-white bg-qb-blue px-1.5 py-0.5 rounded shrink-0">
+                                    {displayRole(report.authorRole)}
+                                  </span>
+                                  <h3 className="text-sm font-black text-ink truncate min-w-0">{formatStaffName(report.authorName)}</h3>
+                                  <span className="text-xs font-bold text-ink-soft truncate shrink-0 max-w-[34%]">{abbreviateStoreName(report.storeName)}</span>
+                                  {hasBestKpt && (
+                                    <span title={bannerText} className={`shrink-0 inline-flex items-center gap-0.5 ${bannerColor} text-white text-xs font-black px-1.5 py-0.5 rounded`}>
+                                      <Trophy size={11} /> BEST
+                                    </span>
+                                  )}
+                                  {report.status === 'draft' && (
+                                    <span className="text-xs font-black text-qb-gray bg-canvas border border-line px-1.5 py-0.5 rounded shrink-0">下書き</span>
+                                  )}
+                                  {report.status === 'published' && report.scheduledFor && new Date(report.scheduledFor) > new Date() && (
+                                    <span className="text-xs font-black text-qb-blue bg-qb-blue/10 border border-qb-blue/30 px-1.5 py-0.5 rounded shrink-0 flex items-center gap-0.5"><Calendar size={10} /> 予約</span>
+                                  )}
 
-                                {/* 装飾用の光 */}
-                                <div className="absolute -top-10 -right-10 w-32 h-32 bg-paradise-mint/5 rounded-full blur-3xl group-hover:bg-paradise-mint/10 transition-all duration-700" />
-                                
-                                <div className="flex items-center justify-between gap-4">
-                                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <div className="w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center text-xl shadow-inner border border-white/60 overflow-hidden shrink-0">
-                                      {report.authorPhotoURL ? (
-                                        <img src={report.authorPhotoURL} alt={report.authorName} className="w-full h-full object-cover" />
-                                      ) : (
-                                        report.authorRole === '店長' ? '🏠' : report.authorRole === 'AM' ? '💼' : '🌟'
-                                      )}
-                                    </div>
-                                    <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-3">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs font-black text-white bg-paradise-ocean/60 px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest shrink-0">
-                                          {displayRole(report.authorRole)}
-                                        </span>
-                                        <h3 className="text-base font-bold text-gray-800 truncate">{formatStaffName(report.authorName)}</h3>
-                                      </div>
-                                      <span className="text-xs font-bold text-gray-500 truncate sm:border-l sm:pl-3 border-gray-200">
-                                        {report.storeName}
+                                  <div className="ml-auto flex items-center gap-2 shrink-0">
+                                    {reactionTotal > 0 && (
+                                      <span className="flex items-center gap-0.5 text-xs font-black text-ink-soft tabular">
+                                        <ThumbsUp size={13} className="text-qb-cyan" /> {reactionTotal}
                                       </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-4 shrink-0">
-                                    <div className="text-right flex flex-col items-end">
-                                      <button 
-                                        onClick={(e) => toggleExpand(e, report.id)}
-                                        className="p-1 hover:bg-white/50 rounded-lg transition-colors text-gray-400 hover:text-paradise-ocean mt-1"
-                                      >
-                                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                                      </button>
-                                    </div>
+                                    )}
+                                    {report.commentCount > 0 && (
+                                      <span className="flex items-center gap-0.5 text-xs font-black text-ink-soft tabular">
+                                        <MessageCircle size={13} className="text-qb-blue" /> {report.commentCount}
+                                      </span>
+                                    )}
+                                    <span className="text-xs font-bold text-ink-soft tabular hidden sm:inline">
+                                      {new Date(report.createdAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
+                                    </span>
+                                    <button
+                                      onClick={(e) => toggleExpand(e, report.id)}
+                                      className="tap grid place-items-center rounded-lg text-qb-gray hover:text-qb-blue hover:bg-canvas transition-colors shrink-0 -mr-2"
+                                    >
+                                      {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                    </button>
                                   </div>
                                 </div>
 

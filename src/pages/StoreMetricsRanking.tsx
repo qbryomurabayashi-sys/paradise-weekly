@@ -10,6 +10,14 @@ const secToMMSS = (sec?: number) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
+// 基準から外れたら赤バー表示（品質・スピードランキングの警戒しきい値）
+// ・カット時間 840秒(14分)「超」で赤 … 参考基準（画像準拠）
+// ・待ち時間 600秒(10分)「超」で赤 … 運用基準（調整可）
+// ・赤黄シグナルは「高いほど良い」指標のため 70%「未満」で赤（要改善）
+const CUTTIME_DANGER = 840;
+const WAITTIME_DANGER = 600;
+const SIGNAL_LOW = 70;
+
 interface Props {
   stores: any[];
   metrics: any[];
@@ -272,6 +280,7 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
     controls: React.ReactNode,
     shouldMaskMetric: boolean,
     variant: 'bar' | 'stars' | 'delta' | 'people' | 'busy' = 'bar',
+    danger?: { over?: number; under?: number; label: string },  // 基準外で赤バー
   ) => {
     const valid = data.filter(d => d.text !== '-' && d.text !== '未入力(人工数)' && d.rate !== -999);
     const maxValue = valid.length ? Math.max(...valid.map(d => Math.abs(d.rate))) : 0;
@@ -285,6 +294,12 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
           </h2>
           {controls}
         </div>
+        {danger && (
+          <div className="flex items-center gap-1.5 mb-3 -mt-1">
+            <span className="inline-block h-2.5 w-4 shrink-0 rounded-full bg-qb-red" />
+            <span className="text-xs font-bold text-qb-red">{danger.label}</span>
+          </div>
+        )}
         <div className="space-y-2.5">
           {data.map((item, i) => {
             const isPlaceholder = item.text === '-' || item.text === '未入力(人工数)' || item.rate === -999;
@@ -386,6 +401,28 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
                   <span className="w-24 shrink-0 truncate text-sm font-bold text-ink">{item.store.name}</span>
                   <div className="flex-1" />
                   <DeltaBadge value={item.rate} />
+                </div>
+              );
+            }
+
+            // 基準外で赤くするバー（品質・スピード用）
+            if (danger) {
+              const isDanger = (danger.over != null && item.rate > danger.over) || (danger.under != null && item.rate < danger.under);
+              const w = maxValue > 0 ? Math.max(4, (item.rate / maxValue) * 100) : 4;
+              const barColor = isDanger ? '#E60000' : rank === 1 ? '#005AAF' : '#0082CD';
+              return (
+                <div key={item.store.id} className="flex items-center gap-3">
+                  <span
+                    className="tabular flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-black"
+                    style={rank <= 3 ? { background: ['#E8B923', '#9AA7B5', '#C7864B'][rank - 1], color: '#fff' } : { background: '#EAF0F7', color: '#7D7D7D' }}
+                  >
+                    {rank}
+                  </span>
+                  <span className="w-24 shrink-0 truncate text-sm font-bold text-ink">{item.store.name}</span>
+                  <div className="relative h-3 flex-1 rounded-full bg-[#EAF0F7] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${w}%`, background: barColor, transition: 'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                  </div>
+                  <span className={`tabular w-14 shrink-0 text-right text-sm font-black ${isDanger ? 'text-qb-red' : 'text-ink'}`}>{item.text}</span>
                 </div>
               );
             }
@@ -512,9 +549,9 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
         </h2>
         <p className="text-xs font-bold text-ink-soft mb-4 -mt-2">※カット時間・待ち時間は「短いほど上位」です。</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
-          {renderRankingList('赤黄シグナル月平均', signalRanking, <Percent size={18} />, null, false)}
-          {renderRankingList('平均カット時間（短い順）', cutTimeRanking, <Scissors size={18} />, null, false)}
-          {renderRankingList('平均待ち時間（短い順）', waitTimeRanking, <Clock size={18} />, null, false)}
+          {renderRankingList('赤黄シグナル月平均', signalRanking, <Percent size={18} />, null, false, 'bar', { under: SIGNAL_LOW, label: `基準 ${SIGNAL_LOW}% 未満は赤（要改善）` })}
+          {renderRankingList('平均カット時間（短い順）', cutTimeRanking, <Scissors size={18} />, null, false, 'bar', { over: CUTTIME_DANGER, label: '14分（840秒）超は赤' })}
+          {renderRankingList('平均待ち時間（短い順）', waitTimeRanking, <Clock size={18} />, null, false, 'bar', { over: WAITTIME_DANGER, label: '10分（600秒）超は赤' })}
           {renderRankingList('リピート比率', repeatRanking, <Repeat size={18} />, null, false)}
         </div>
       </section>

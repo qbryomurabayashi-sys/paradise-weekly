@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ReferenceLine,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   PieChart, Pie, Cell,
   BarChart, Bar,
@@ -239,6 +239,39 @@ export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth
       }));
   }, [metrics, storeId]);
 
+  // 品質・スピード指標の月次推移（当店 vs 全社平均）
+  const qualityTrend = useMemo(() => {
+    const months = Array.from(new Set(metrics.filter((m: any) => m.storeId === storeId).map((m: any) => m.yearMonth)))
+      .sort((a: any, b: any) => a.localeCompare(b))
+      .slice(-12);
+    const companyAvgFor = (ym: string, pick: (m: any) => number | null) => {
+      const vals = stores
+        .map((s: any) => metrics.find((m: any) => m.storeId === s.id && m.yearMonth === ym))
+        .filter(Boolean)
+        .map((m: any) => pick(m))
+        .filter((v: any): v is number => typeof v === 'number' && !isNaN(v) && v > 0);
+      return vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : null;
+    };
+    const round1 = (v: number | null) => (v == null ? null : Number(v.toFixed(1)));
+    return months.map((ym: any) => {
+      const m = metrics.find((x: any) => x.storeId === storeId && x.yearMonth === ym);
+      return {
+        month: ym.slice(5) + '月',
+        カット: round1(m?.avgCutTimeSec ? m.avgCutTimeSec / 60 : null),
+        カット全社: round1(companyAvgFor(ym, (x: any) => (x.avgCutTimeSec ? x.avgCutTimeSec / 60 : null))),
+        待ち: round1(m?.avgWaitTimeSec ? m.avgWaitTimeSec / 60 : null),
+        待ち全社: round1(companyAvgFor(ym, (x: any) => (x.avgWaitTimeSec ? x.avgWaitTimeSec / 60 : null))),
+        シグナル: round1(m?.redYellowSignal != null ? m.redYellowSignal : null),
+        シグナル全社: round1(companyAvgFor(ym, (x: any) => (x.redYellowSignal != null ? x.redYellowSignal : null))),
+      };
+    });
+  }, [metrics, stores, storeId]);
+
+  const hasCutTrend = useMemo(() => qualityTrend.filter(d => d.カット != null).length >= 2, [qualityTrend]);
+  const hasWaitTrend = useMemo(() => qualityTrend.filter(d => d.待ち != null).length >= 2, [qualityTrend]);
+  const hasSignalTrend = useMemo(() => qualityTrend.filter(d => d.シグナル != null).length >= 2, [qualityTrend]);
+  const hasQualityTrend = hasCutTrend || hasWaitTrend || hasSignalTrend;
+
   // 時間帯別 来店分布（ピーク時間帯をハイライト）
   const hourChart = useMemo(() => {
     if (!current) return [];
@@ -346,6 +379,40 @@ export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth
   const mask = (v: string) => (isMasked ? '**.*' : v);
   const seriesNames = radarData.length ? Object.keys(radarData[0]).filter(k => k !== 'axis') : [];
   const seriesColors: Record<string, string> = { [store?.name || '対象店舗']: QB.blue, エリア平均: QB.cyan, 全社平均: QB.yellow };
+
+  // 品質指標トレンドの共通描画（当店=実線青 / 全社平均=破線シアン / 基準=赤破線）
+  const renderQualityLine = (
+    title: string,
+    icon: React.ReactNode,
+    storeKey: 'カット' | '待ち' | 'シグナル',
+    coKey: string,
+    fmt: (v: number) => string,
+    danger?: { y: number; label: string },
+  ) => (
+    <GlassCard className="p-5">
+      <h2 className="text-base font-bold text-ink flex items-center gap-2 mb-4 pb-3 border-b border-line">
+        <span className="shrink-0">{icon}</span>{title}
+      </h2>
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart data={qualityTrend} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+          <CartesianGrid stroke={QB.grid} vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 12, fontWeight: 700, fill: '#00004B' }} axisLine={{ stroke: QB.grid }} tickLine={false} />
+          <YAxis tick={{ fontSize: 12, fill: '#7D7D7D' }} axisLine={false} tickLine={false} width={40} hide={isMasked} domain={['auto', 'auto']} />
+          <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12, fontWeight: 700, border: `1px solid ${QB.grid}` }} formatter={(v: any) => (isMasked ? '**.*' : fmt(v))} />
+          {danger && !isMasked && (
+            <ReferenceLine y={danger.y} stroke={QB.danger} strokeDasharray="5 4" strokeWidth={1.5}
+              label={{ value: danger.label, position: 'insideTopRight', fill: QB.danger, fontSize: 11, fontWeight: 700 }} />
+          )}
+          <Line type="monotone" dataKey={storeKey} name={store?.name || '当店'} stroke={QB.blue} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+          <Line type="monotone" dataKey={coKey} name="全社平均" stroke={QB.cyan} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+      <div className="flex items-center justify-center gap-4 mt-2 text-xs font-bold text-ink-soft">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: QB.blue }} />{store?.name || '当店'}</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full" style={{ background: QB.cyan }} />全社平均</span>
+      </div>
+    </GlassCard>
+  );
 
   return (
     <div className="space-y-6">
@@ -513,6 +580,20 @@ export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: QB.cyan }} />来店数</span>
               </div>
             </GlassCard>
+          )}
+
+          {/* 品質・スピード指標の推移（当店 vs 全社平均） */}
+          {hasQualityTrend && (
+            <section>
+              <h2 className="text-lg font-bold text-ink mb-4 flex items-center gap-2">
+                <Activity className="text-qb-cyan" size={20} /> 品質・スピード指標の推移（当店 vs 全社平均）
+              </h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                {hasCutTrend && renderQualityLine('平均カット時間（分）', <Scissors className="text-qb-blue" size={18} />, 'カット', 'カット全社', v => `${v}分`, { y: 14, label: '基準14分' })}
+                {hasWaitTrend && renderQualityLine('平均待ち時間（分）', <Clock className="text-qb-blue" size={18} />, '待ち', '待ち全社', v => `${v}分`, { y: 10, label: '基準10分' })}
+                {hasSignalTrend && renderQualityLine('赤黄シグナル比率（%）', <Activity className="text-qb-blue" size={18} />, 'シグナル', 'シグナル全社', v => `${v}%`, { y: 70, label: '基準70%' })}
+              </div>
+            </section>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
