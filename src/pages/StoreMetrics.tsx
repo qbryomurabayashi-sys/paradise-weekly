@@ -275,21 +275,27 @@ export const StoreMetrics = () => {
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white/60 p-3 sm:p-4 rounded-2xl shadow-sm border border-white">
         <div className="flex gap-3 items-center">
-          <span className="font-bold text-ink-soft text-sm shrink-0">表示月:</span>
-          {activeTab === 'input' ? (
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="tabular flex-1 sm:flex-none min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
-            />
+          {activeTab === 'analytics' ? (
+            <span className="text-xs font-bold text-ink-soft">月・エリア・店舗は下の分析パネル内で選択できます</span>
           ) : (
-            <input
-              type="month"
-              value={rankingMonth}
-              onChange={(e) => setRankingMonth(e.target.value)}
-              className="tabular flex-1 sm:flex-none min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
-            />
+            <>
+              <span className="font-bold text-ink-soft text-sm shrink-0">表示月:</span>
+              {activeTab === 'input' ? (
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="tabular flex-1 sm:flex-none min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+                />
+              ) : (
+                <input
+                  type="month"
+                  value={rankingMonth}
+                  onChange={(e) => setRankingMonth(e.target.value)}
+                  className="tabular flex-1 sm:flex-none min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+                />
+              )}
+            </>
           )}
         </div>
         <div className="grid grid-cols-3 sm:flex gap-1.5 bg-canvas p-1 rounded-xl">

@@ -85,7 +85,7 @@ const getDayBalance = (m: any) => {
   return Math.max(0, 100 - cv * 100);
 };
 
-export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth, isMasked = true }) => {
+export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth: monthProp, isMasked = true }) => {
   const { user, viewMode } = useAuthStore();
   const activeRole = user?.role === 'BM' && viewMode ? viewMode : user?.role;
 
@@ -101,6 +101,28 @@ export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth
   const storeId = selectedStoreId || defaultStoreId;
   const store = stores.find((s: any) => s.id === storeId);
   const isLocked = activeRole === '店長';
+
+  // 月：親propを初期値にして分析タブ内で独立選択できるようにする
+  const [monthLocal, setMonthLocal] = useState<string>(monthProp);
+  const selectedMonth = monthLocal;
+
+  // エリア：店舗ドロップダウンを絞り込む（全エリア + 各AM）。BMのみ操作可。
+  const [areaFilter, setAreaFilter] = useState<string>('ALL');
+  const areas = useMemo(
+    () => Array.from(new Set(stores.map((s: any) => s.assignedAM).filter(Boolean))) as string[],
+    [stores],
+  );
+  const visibleStores = useMemo(
+    () => (areaFilter === 'ALL' ? stores : stores.filter((s: any) => s.assignedAM === areaFilter)),
+    [stores, areaFilter],
+  );
+  const handleAreaChange = (a: string) => {
+    setAreaFilter(a);
+    if (a !== 'ALL') {
+      const inArea = stores.filter((s: any) => s.assignedAM === a);
+      if (inArea.length && !inArea.some((s: any) => s.id === storeId)) setSelectedStoreId(inArea[0].id);
+    }
+  };
 
   const current = metrics.find((m: any) => m.storeId === storeId && m.yearMonth === selectedMonth);
 
@@ -416,20 +438,49 @@ export const StoreAnalytics: React.FC<Props> = ({ stores, metrics, selectedMonth
 
   return (
     <div className="space-y-6">
-      {/* コントロールバー */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white/60 p-3 sm:p-4 rounded-2xl shadow-sm border border-white">
-        <span className="font-bold text-ink-soft text-sm shrink-0">対象店舗:</span>
-        {isLocked ? (
-          <span className="tabular font-black text-ink text-base">{store?.name || '未設定'}</span>
-        ) : (
-          <select
-            value={storeId}
-            onChange={(e) => setSelectedStoreId(e.target.value)}
-            className="min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
-          >
-            {stores.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+      {/* コントロールバー：月・エリア・店舗 */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 bg-white/60 p-3 sm:p-4 rounded-2xl shadow-sm border border-white">
+        {/* 表示月 */}
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-ink-soft text-sm shrink-0">表示月:</span>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setMonthLocal(e.target.value)}
+            className="tabular flex-1 sm:flex-none min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+          />
+        </div>
+
+        {/* エリア（BMのみ） */}
+        {!isLocked && areas.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-ink-soft text-sm shrink-0">エリア:</span>
+            <select
+              value={areaFilter}
+              onChange={(e) => handleAreaChange(e.target.value)}
+              className="min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+            >
+              <option value="ALL">全エリア</option>
+              {areas.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
         )}
+
+        {/* 対象店舗 */}
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-ink-soft text-sm shrink-0">対象店舗:</span>
+          {isLocked ? (
+            <span className="tabular font-black text-ink text-base">{store?.name || '未設定'}</span>
+          ) : (
+            <select
+              value={storeId}
+              onChange={(e) => setSelectedStoreId(e.target.value)}
+              className="min-h-[44px] px-3 rounded-xl border border-line bg-white shadow-sm font-bold text-ink focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+            >
+              {visibleStores.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {!current ? (
