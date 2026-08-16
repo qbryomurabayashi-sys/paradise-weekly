@@ -305,7 +305,12 @@ const SecurityGuard = () => {
       }
     };
 
+    // .copy-ok 配下（週次報告のコメント欄のみ）はコピペを許可する例外判定
+    const isCopyable = (n: any): boolean => !!(n && typeof n.closest === 'function' && n.closest('.copy-ok'));
+
     const handleContextMenu = (e: MouseEvent) => {
+      // コメント欄内は右クリック（コピー/貼り付けメニュー）を許可
+      if (isCopyable(e.target)) return;
       e.preventDefault();
     };
 
@@ -325,6 +330,12 @@ const SecurityGuard = () => {
     };
 
     const handleCopy = (e: ClipboardEvent) => {
+      // コメント欄内の選択テキスト／入力欄からのコピー・カットは許可
+      const sel = window.getSelection();
+      const selNode = sel && sel.anchorNode
+        ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement)
+        : null;
+      if (isCopyable(e.target) || isCopyable(selNode)) return;
       e.preventDefault();
       alert('【セキュリティ警告】コピーアクションは禁止されています。');
     };

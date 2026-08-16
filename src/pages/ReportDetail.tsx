@@ -342,7 +342,7 @@ export const ReportDetail = () => {
             c.authorRole === 'AM' ? '🎩' : '👤'
           )}
         </div>
-        <div className="glass rounded-2xl p-3 flex-1 min-w-0">
+        <div className="glass rounded-2xl p-3 flex-1 min-w-0 copy-ok">
           <div className="flex items-center gap-1.5 mb-1">
             <span className="font-black text-sm text-ink truncate">{formatStaffName(c.authorName)}</span>
             <span className={`text-xs text-white px-1.5 py-0.5 rounded-full font-black shrink-0 ${c.authorRole === 'AM' ? 'bg-qb-blue' : 'bg-qb-gray'}`}>
@@ -448,7 +448,7 @@ export const ReportDetail = () => {
 
                 <div className="relative flex flex-col bg-white rounded-2xl border-2 border-line focus-within:border-qb-cyan transition-all shadow-sm p-3">
                   <SmoothTextArea
-                    className="w-full min-h-[110px] max-h-[220px] p-2 bg-transparent outline-none resize-y text-ink font-medium text-sm leading-relaxed"
+                    className="copy-ok w-full min-h-[110px] max-h-[220px] p-2 bg-transparent outline-none resize-y text-ink font-medium text-sm leading-relaxed"
                     value={comment}
                     id="split-textarea"
                     onValueChange={handleCommentChange}
@@ -544,7 +544,7 @@ export const ReportDetail = () => {
                 <div className="flex gap-2.5 items-end">
                   <div className="flex-1 relative bg-white rounded-2xl overflow-hidden border-2 border-line focus-within:border-qb-cyan transition-all shadow-sm">
                     <SmoothTextArea
-                      className={`w-full p-3 bg-transparent outline-none resize-none text-ink font-medium leading-relaxed transition-all text-sm ${
+                      className={`copy-ok w-full p-3 bg-transparent outline-none resize-none text-ink font-medium leading-relaxed transition-all text-sm ${
                         presetHeight === 'compact' ? 'min-h-[44px] h-[44px]' :
                         presetHeight === 'normal' ? 'min-h-[76px] h-[76px] sm:min-h-[110px] sm:h-[110px]' : 'min-h-[160px] h-[160px] sm:min-h-[240px] sm:h-[240px]'
                       }`}
