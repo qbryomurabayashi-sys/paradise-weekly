@@ -38,10 +38,10 @@ const MetricInput = ({ label, field, storeId, isEditing, currentValue, step = "1
       <span className="text-sm font-bold text-ink-soft shrink-0">{label}</span>
       <input
         type="number"
-        inputMode="decimal"
+        inputMode={step === '1' ? 'numeric' : 'decimal'}
         step={step}
         onFocus={(e) => e.target.select()}
-        className="tabular w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+        className="tabular w-20 sm:w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
         value={editData[storeId]?.[field] ?? currentValue ?? ''}
         onChange={(e) => onEditChange(storeId, field, e.target.value)}
       />
@@ -127,7 +127,7 @@ const TimeInput = ({ label, field, storeId, isEditing, currentValue, editData, o
         inputMode="numeric"
         placeholder="mm:ss"
         onFocus={(e) => e.target.select()}
-        className="tabular w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
+        className="tabular w-20 sm:w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
         defaultValue={secToMMSS(displaySec)}
         onBlur={(e) => onEditChange(storeId, field, String(mmssToSec(e.target.value)))}
       />
@@ -538,7 +538,7 @@ export const StoreMetrics = () => {
         <div className="space-y-6">
           {/* 【機能1】全店まとめ編集／一括保存の操作バー（BM限定） */}
           {isBM && (
-            <div className="flex flex-wrap gap-3 items-center bg-white/60 p-3 rounded-2xl border border-white shadow-sm">
+            <div className={`${editingStoreId === 'ALL' ? 'hidden sm:flex' : 'flex'} flex-wrap gap-3 items-center bg-white/60 p-3 rounded-2xl border border-white shadow-sm`}>
               {editingStoreId === 'ALL' ? (
                 <>
                   <button
@@ -762,7 +762,7 @@ export const StoreMetrics = () => {
                 {/* 品質・稼働指標 */}
                 <div className="bg-white/50 p-3 rounded-xl border border-white">
                   <h3 className="text-xs font-black text-qb-blue mb-2 uppercase tracking-wider">品質・稼働指標</h3>
-                  <div className="grid grid-cols-2 gap-x-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄シグナル月平均(%)" field="redYellowSignal" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowSignal} step="0.1" isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 平日(%)" field="redYellowWeekday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowWeekday} step="0.1" isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 土日祝(%)" field="redYellowHoliday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowHoliday} step="0.1" isMasked={isMasked} />
@@ -809,10 +809,37 @@ export const StoreMetrics = () => {
         <StoreAnalytics stores={filteredStores} metrics={metrics} selectedMonth={rankingMonth} isMasked={isMasked} />
       )}
 
+      {/* 【P3 スマホ】全店まとめ編集中は保存/キャンセルを画面下に固定して見失わないように（モバイルのみ・PCは上部バーのまま） */}
+      {isBM && activeTab === 'input' && editingStoreId === 'ALL' && (
+        <div className="sm:hidden fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-line bg-white/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl">
+          <button
+            onClick={cancelEditing}
+            disabled={isSavingAll}
+            className="tap flex-1 rounded-xl text-sm font-bold text-ink-soft border border-line bg-white transition-all active:scale-95 disabled:opacity-60"
+          >
+            やめる
+          </button>
+          <button
+            onClick={copyPrevMonthAll}
+            disabled={isSavingAll}
+            className="tap flex-1 rounded-xl text-sm font-black text-qb-blue border border-line bg-white transition-all active:scale-95 disabled:opacity-60"
+          >
+            前月コピー
+          </button>
+          <button
+            onClick={handleSaveAll}
+            disabled={isSavingAll}
+            className="tap flex-[2] rounded-xl text-sm font-black flex items-center justify-center gap-2 bg-gradient-to-r from-qb-blue to-qb-cyan text-white shadow-md transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Save size={16} /> {isSavingAll ? '保存中…' : '全店保存'}
+          </button>
+        </div>
+      )}
+
       {/* 【微調整①】保存結果トースト（画面下・3秒） */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-black border select-none secure-unselectable ${
+          className={`fixed ${editingStoreId === 'ALL' ? 'bottom-28 sm:bottom-6' : 'bottom-6'} left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-black border select-none secure-unselectable ${
             toast.type === 'success'
               ? 'bg-success text-white border-success'
               : 'bg-danger text-white border-danger'
