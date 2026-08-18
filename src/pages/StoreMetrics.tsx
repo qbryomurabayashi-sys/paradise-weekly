@@ -368,7 +368,7 @@ export const StoreMetrics = () => {
                       <div>
                         <MetricInput editData={editData} onEditChange={handleEditChange} label="予客" field="budgetCustomers" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.budgetCustomers} isMasked={isMasked} />
                         {!isEditing && storeMetric?.budgetCustomers ? (
-                           <div className="text-right text-xs font-bold text-blue-600 mt-1">
+                           <div className={`text-right text-xs font-bold mt-1 ${isMasked ? 'text-ink-soft' : ((storeMetric.totalCustomers / storeMetric.budgetCustomers) >= 1 ? 'text-success' : 'text-danger')}`}>
                              予客達成率: {isMasked ? '**.**%' : ((storeMetric.totalCustomers / storeMetric.budgetCustomers) * 100).toFixed(1) + '%'}
                            </div>
                         ) : null}
@@ -376,14 +376,14 @@ export const StoreMetrics = () => {
                       <div>
                         <MetricInput editData={editData} onEditChange={handleEditChange} label="前客" field="lastYearCustomers" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.lastYearCustomers} isMasked={isMasked} />
                         {!isEditing && storeMetric?.lastYearCustomers ? (
-                           <div className="text-right text-xs font-bold text-emerald-600 mt-1">
+                           <div className={`text-right text-xs font-bold mt-1 ${isMasked ? 'text-ink-soft' : ((storeMetric.totalCustomers / storeMetric.lastYearCustomers) >= 1 ? 'text-success' : 'text-danger')}`}>
                              前客比: {isMasked ? '**.**%' : ((storeMetric.totalCustomers / storeMetric.lastYearCustomers) * 100).toFixed(1) + '%'}
                            </div>
                         ) : null}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 border-t border-dashed border-gray-300 pt-2 mt-2">
+                    <div className="grid grid-cols-2 gap-4 border-t border-dashed border-line pt-2 mt-2">
                         <MetricInput editData={editData} onEditChange={handleEditChange} label="営日" field="businessDays" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.businessDays} isMasked={isMasked} />
                         <MetricInput editData={editData} onEditChange={handleEditChange} label="総稼(人工)" field="monthlyWorkingStaff" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.monthlyWorkingStaff} step="0.5" isMasked={isMasked} />
                     </div>

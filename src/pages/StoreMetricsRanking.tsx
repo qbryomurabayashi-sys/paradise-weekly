@@ -447,7 +447,7 @@ export const StoreMetricsRanking: React.FC<Props> = ({ stores, metrics, selected
     );
   };
 
-  const selectCls = 'text-xs font-bold text-ink bg-white/70 border border-line rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-qb-cyan min-h-[36px]';
+  const selectCls = 'text-xs font-bold text-ink bg-white/70 border border-line rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-qb-cyan min-h-[44px]';
 
   const demoSelect = (
     <select value={demoCategory} onChange={e => setDemoCategory(e.target.value)} className={selectCls}>

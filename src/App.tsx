@@ -80,9 +80,9 @@ const Header = () => {
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="w-10 h-10 bg-white/40 rounded-2xl flex flex-col items-center justify-center border border-white/40 shadow-sm cursor-pointer active:scale-95 transition-transform space-y-1"
           >
-            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-transform ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
-            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-opacity ${isMenuOpen ? 'opacity-0' : ''}`} />
-            <div className={`w-4 h-0.5 bg-paradise-sunset rounded-full transition-transform ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
+            <div className={`w-4 h-0.5 bg-qb-cyan rounded-full transition-transform ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
+            <div className={`w-4 h-0.5 bg-qb-cyan rounded-full transition-opacity ${isMenuOpen ? 'opacity-0' : ''}`} />
+            <div className={`w-4 h-0.5 bg-qb-cyan rounded-full transition-transform ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
           </button>
 
           <AnimatePresence>
@@ -113,7 +113,7 @@ const Header = () => {
                     </div>
                     <button
                       onClick={() => setIsMenuOpen(false)}
-                      className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 flex items-center justify-center transition-all cursor-pointer"
+                      className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 text-ink-soft hover:text-gray-700 flex items-center justify-center transition-all cursor-pointer"
                     >
                       <X size={16} />
                     </button>
@@ -122,15 +122,15 @@ const Header = () => {
                   {/* Category 1: Main */}
                   <div className="space-y-1">
                     <span className="text-xs font-black text-qb-cyan bg-qb-cyan/10 px-2.5 py-1 rounded-md tracking-wide inline-block mb-1">メイン</span>
-                    <Link to="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-gray-100 text-gray-600 rounded-lg shrink-0"><Home size={16} /></div>
                       <span>ホーム</span>
                     </Link>
-                    <Link to="/post" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/post" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-gray-100 text-gray-600 rounded-lg shrink-0"><PlusSquare size={16} /></div>
                       <span>投稿・報告</span>
                     </Link>
-                    <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/calendar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-gray-100 text-gray-600 rounded-lg shrink-0"><Calendar size={16} /></div>
                       <span>カレンダー</span>
                     </Link>
@@ -139,19 +139,19 @@ const Header = () => {
                   {/* Category 2: Shifts & Planning */}
                   <div className="space-y-1 mt-5">
                     <span className="text-xs font-black text-qb-blue bg-qb-blue/10 px-2.5 py-1 rounded-md tracking-wide inline-block mb-1">シフト・公出有休管理</span>
-                    <Link to="/shift" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/shift" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg shrink-0"><Calendar size={16} /></div>
                       <span>シフト・稼働ダッシュボード</span>
                     </Link>
-                    <Link to="/shift/request" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/shift/request" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-sky-50 text-sky-500 rounded-lg shrink-0"><Calendar size={16} /></div>
                       <span>希望休の提出</span>
                     </Link>
-                    <Link to="/leave-plans" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/leave-plans" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-emerald-50 text-emerald-500 rounded-lg shrink-0"><Calendar size={16} /></div>
                       <span>予定数提出・確認</span>
                     </Link>
-                    <Link to="/store-metrics" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/store-metrics" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-purple-50 text-purple-500 rounded-lg shrink-0"><TrendingUp size={16} /></div>
                       <span>店舗ランキング</span>
                     </Link>
@@ -160,19 +160,19 @@ const Header = () => {
                   {/* Category 3: Management & Profile */}
                   <div className="space-y-1 mt-5 flex-1">
                     <span className="text-xs font-black text-qb-blue-dark bg-qb-blue-dark/10 px-2.5 py-1 rounded-md tracking-wide inline-block mb-1">管理業務 & 各自設定</span>
-                    <Link to="/key-pass" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/key-pass" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-yellow-50 text-yellow-600 rounded-lg shrink-0"><Key size={16} /></div>
                       <span>鍵・入証管理</span>
                     </Link>
                     
                     {(activeRole === 'BM' || activeRole === 'AM') && (
-                      <Link to="/post-announcement" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                      <Link to="/post-announcement" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                         <div className="p-1.5 bg-pink-50 text-pink-500 rounded-lg shrink-0"><Sparkles size={16} /></div>
                         <span>重要なお知らせ配信</span>
                       </Link>
                     )}
 
-                    <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-gray-700 hover:bg-paradise-sunset/10 font-bold transition-all text-sm">
+                    <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-2.5 rounded-xl text-ink hover:bg-qb-cyan/10 font-bold transition-all text-sm">
                       <div className="p-1.5 bg-indigo-50 text-indigo-500 rounded-lg shrink-0"><User size={16} /></div>
                       <span>プロフィール</span>
                     </Link>
@@ -185,12 +185,12 @@ const Header = () => {
                         setIsMenuOpen(false);
                         window.location.reload();
                       }} 
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-paradise-sunset/10 text-paradise-ocean font-bold text-left text-xs transition-colors"
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-qb-cyan/10 text-qb-blue font-bold text-left text-xs transition-colors"
                     >
                       <div className="p-1.5 bg-teal-50 text-teal-600 rounded-lg shrink-0"><RefreshCcw size={14} /></div>
                       <span>アプリを強制更新</span>
                     </button>
-                    <div className="text-center text-xs text-gray-400 font-extrabold tracking-wide">
+                    <div className="text-center text-xs text-ink-soft font-extrabold tracking-wide">
                       VERSION 2.0.0
                     </div>
                   </div>
@@ -207,7 +207,7 @@ const Header = () => {
             <Scissors className="text-white" size={20} />
         </div>
         <div>
-          <p className="text-[10px] font-black tracking-[0.25em] text-qb-blue uppercase leading-none">QB HOUSE</p>
+          <p className="text-xs font-black tracking-[0.25em] text-qb-blue uppercase leading-none">QB HOUSE</p>
           <h1 className="text-base sm:text-lg font-black text-ink tracking-wide text-left leading-tight">管理者共有ツール</h1>
         </div>
       </div>
@@ -219,7 +219,7 @@ const Header = () => {
         >
           <Bell size={20} className="group-hover:rotate-12 transition-transform" />
           {unreadCount > 0 && (
-            <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-paradise-sunset rounded-full border-2 border-white animate-pulse" />
+            <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-qb-cyan rounded-full border-2 border-white animate-pulse" />
           )}
         </button>
 
@@ -234,7 +234,7 @@ const Header = () => {
               <div className="flex justify-between items-center mb-2 px-1">
                 <h3 className="text-base font-black text-gray-800 flex items-center gap-2"><Bell size={16}/> 通知</h3>
                 {unreadCount > 0 && (
-                  <button onClick={() => user && markAllAsRead(user.uid)} className="text-xs text-paradise-ocean font-bold flex items-center gap-1 hover:underline">
+                  <button onClick={() => user && markAllAsRead(user.uid)} className="text-xs text-qb-blue font-bold flex items-center gap-1 hover:underline">
                     <CheckCircle size={10} /> すべて既読にする
                   </button>
                 )}
@@ -243,14 +243,14 @@ const Header = () => {
               {notifications.filter(n => !n.isRead).length === 0 ? (
                 <div className="text-center py-6">
                   <Bell size={24} className="mx-auto text-gray-300 mb-2" />
-                  <p className="text-gray-400 font-bold text-sm">新しい通知はありません</p>
+                  <p className="text-ink-soft font-bold text-sm">新しい通知はありません</p>
                 </div>
               ) : (
                 notifications.filter(n => !n.isRead).map((notif) => (
                   <div 
                     key={notif.id} 
                     onClick={() => handleNotificationClick(notif)}
-                    className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer transition-colors bg-paradise-ocean/5 hover:bg-paradise-ocean/10 border border-paradise-ocean/20`}
+                    className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer transition-colors bg-qb-blue/5 hover:bg-qb-blue/10 border border-qb-blue/20`}
                   >
                     <div className={`p-2 rounded-xl mt-1 ${
                       notif.type === 'comment' ? 'bg-blue-100 text-blue-500' : 
@@ -265,11 +265,11 @@ const Header = () => {
                       <p className="text-sm text-gray-800 leading-snug">
                          <span className="font-black">{notif.message}</span>
                       </p>
-                      <span className="text-[10px] font-bold text-gray-400 mt-1 block">
+                      <span className="text-xs font-bold text-ink-soft mt-1 block">
                         {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    {!notif.isRead && <div className="w-2 h-2 bg-paradise-sunset rounded-full mt-2" />}
+                    {!notif.isRead && <div className="w-2 h-2 bg-qb-cyan rounded-full mt-2" />}
                   </div>
                 ))
               )}
@@ -424,16 +424,16 @@ export default function App() {
 
   if (isLineBrowser) {
     return (
-      <div className="fixed inset-0 bg-paradise-ocean flex items-center justify-center p-8 text-center z-[9999]">
+      <div className="fixed inset-0 bg-qb-blue flex items-center justify-center p-8 text-center z-[9999]">
         <div className="glass p-10 rounded-[3rem] border-2 border-white/40 space-y-6 max-w-sm">
           <div className="text-6xl mb-4">⚠️</div>
           <h2 className="text-2xl font-black text-gray-800">ブラウザを変更してください</h2>
           <p className="text-base text-gray-600 font-bold leading-relaxed">
             LINE内ブラウザではログインが正しく動作しない場合があります。<br/><br/>
             画面右上のメニュー（︙）から<br/>
-            <span className="text-paradise-sunset font-black">「デフォルトのブラウザで開く」</span><br/>
+            <span className="text-qb-cyan font-black">「デフォルトのブラウザで開く」</span><br/>
             または<br/>
-            <span className="text-paradise-sunset font-black">「Safari / Chromeで開く」</span><br/>
+            <span className="text-qb-cyan font-black">「Safari / Chromeで開く」</span><br/>
             を選択してください。
           </p>
         </div>
@@ -503,14 +503,14 @@ export default function App() {
 
           {updateAvailable && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-paradise-ocean/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-qb-blue/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
                 <div className="flex-1">
                   <p className="text-sm font-black text-gray-800">新しいバージョンがあります</p>
-                  <p className="text-xs font-bold text-gray-500 mt-0.5">最新の機能を使用するには更新してください</p>
+                  <p className="text-xs font-bold text-ink-soft mt-0.5">最新の機能を使用するには更新してください</p>
                 </div>
                 <button 
                   onClick={() => window.location.reload()}
-                  className="bg-paradise-ocean text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-paradise-ocean/90 transition-colors shadow-lg active:scale-95"
+                  className="bg-qb-blue text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-qb-blue/90 transition-colors shadow-lg active:scale-95"
                 >
                   <RefreshCcw size={16} /> 更新
                 </button>
@@ -522,30 +522,30 @@ export default function App() {
           
           <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 relative z-40">
               {user?.role === 'BM' && (
-                <div className="bg-white/60 backdrop-blur-md border border-paradise-ocean/30 p-2 rounded-xl shadow-sm mb-4 flex items-center gap-3 overflow-x-auto no-scrollbar">
-                    <span className="text-xs font-bold text-paradise-ocean whitespace-nowrap pl-2 flex items-center gap-1"><Sparkles size={14}/> 権限シミュレーター:</span>
+                <div className="bg-white/60 backdrop-blur-md border border-qb-blue/30 p-2 rounded-xl shadow-sm mb-4 flex items-center gap-3 overflow-x-auto no-scrollbar">
+                    <span className="text-xs font-bold text-qb-blue whitespace-nowrap pl-2 flex items-center gap-1"><Sparkles size={14}/> 権限シミュレーター:</span>
                     <div className="flex bg-white/50 p-1 rounded-lg border border-gray-100 whitespace-nowrap overflow-x-visible">
                         <button
                           onClick={() => setViewMode(null)}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${!viewMode ? 'bg-paradise-ocean text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
+                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${!viewMode ? 'bg-qb-blue text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
                         >
                           無効 (本来の権限)
                         </button>
                         <button
                           onClick={() => setViewMode('BM')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === 'BM' ? 'bg-paradise-ocean text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
+                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === 'BM' ? 'bg-qb-blue text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
                         >
                           B
                         </button>
                         <button
                           onClick={() => setViewMode('AM')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === 'AM' ? 'bg-paradise-ocean text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
+                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === 'AM' ? 'bg-qb-blue text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
                         >
                           A
                         </button>
                         <button
                           onClick={() => setViewMode('店長')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === '店長' ? 'bg-paradise-ocean text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
+                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === '店長' ? 'bg-qb-blue text-white shadow' : 'bg-transparent text-gray-500 hover:bg-white/50'}`}
                         >
                           Ｓ
                         </button>
