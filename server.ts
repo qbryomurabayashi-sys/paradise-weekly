@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = Number(process.env.PORT) || 5310;
 
   // JSON body parser with a slightly larger limit for large text blocks
   app.use(express.json({ limit: "10mb" }));
