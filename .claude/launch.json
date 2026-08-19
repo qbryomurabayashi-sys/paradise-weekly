@@ -2,14 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
-    },
-    {
-      "name": "dev-5199",
-      "url": "http://127.0.0.1:5199"
+      "name": "kanri-tool",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "Set-Location -LiteralPath 'C:\\Users\\ryo.murabayashi\\Downloads\\管理者共有ツールapp'; $env:PORT=5310; npm run dev"],
+      "port": 5310,
+      "autoPort": true
     }
   ]
 }

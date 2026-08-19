@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, limit } from 'firebase/firestore';
-import { getFiscalWeek } from '../lib/dateUtils';
+import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 import { useAuthStore } from './useAuthStore';
 import { visibleAuthorRoles } from '../lib/reportPermissions';
 
@@ -418,7 +418,73 @@ export const useReportStore = create<ReportState>((set, get) => ({
 
         // Sort properly using timestamp milliseconds
         validReports.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt));
-        set({ reports: validReports });
+
+        // 防御的 dedupe：万一同一 id が混入しても最初の1件だけ残す（並び順は維持）。
+        const seenIds = new Set<string>();
+        const uniqueReports = validReports.filter((r) => {
+          if (seenIds.has(r.id)) return false;
+          seenIds.add(r.id);
+          return true;
+        });
+
+        // 内容重複の表示側畳み込み（非破壊）：
+        // Firestore の実データは一切消さず、画面上で「同一内容の重複KPT」を1枚に見せる。
+        // 対象は status !== 'draft' のみ。draft は判定に入れず素通しでそのまま残す。
+        // 同一グループ = authorId × weekNumber × year × 正規化本文（KPT内容フィールド全部。B と同一ロジック）。
+        // 各グループで残す1件 = エンゲージメント（reactions.count 合計 + commentCount。readBy は含めない）最大、
+        //   同点は createdAt 最古（getTimestampMillis 最小）。単独グループは畳まない。
+        // 元の createdAt 降順の並びは維持したまま、除外対象の id を落とすだけ。
+        const engagementOf = (r: Report): number => {
+          const reactionSum = Array.isArray(r.reactions)
+            ? r.reactions.reduce(
+                (s, x: any) => s + (Number(x.count) || (Array.isArray(x.userIds) ? x.userIds.length : 0)),
+                0
+              )
+            : 0;
+          const comments = Number(r.commentCount) || 0;
+          return reactionSum + comments;
+        };
+
+        // グループごとに「残す1件の id」を決める（draft はグループ化しない）。
+        const groups = new Map<string, Report[]>();
+        for (const r of uniqueReports) {
+          if (r.status === 'draft') continue;
+          const key = [
+            r.authorId,
+            r.weekNumber,
+            r.year,
+            normalizeKptContent(r),
+          ].join('||');
+          const arr = groups.get(key);
+          if (arr) arr.push(r);
+          else groups.set(key, [r]);
+        }
+        const keepIds = new Set<string>();
+        for (const [, arr] of groups) {
+          if (arr.length < 2) {
+            keepIds.add(arr[0].id); // 単独は畳まない（そのまま残す）
+            continue;
+          }
+          let best = arr[0];
+          for (let i = 1; i < arr.length; i++) {
+            const cand = arr[i];
+            const de = engagementOf(cand) - engagementOf(best);
+            if (de > 0) {
+              best = cand;
+            } else if (de === 0) {
+              // 同点は createdAt 最古を残す（決定的）
+              if (getTimestampMillis(cand.createdAt) < getTimestampMillis(best.createdAt)) best = cand;
+            }
+          }
+          keepIds.add(best.id);
+        }
+        // 元の並び（createdAt 降順）を保ったまま、畳み込み対象の重複だけ除外する。
+        // draft は上でグループ化していないので keepIds に無いが、ここで常に素通しで残す。
+        const collapsedReports = uniqueReports.filter(
+          (r) => r.status === 'draft' || keepIds.has(r.id)
+        );
+
+        set({ reports: collapsedReports });
       }, (error) => {
       if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
         document.dispatchEvent(new CustomEvent('quota-exceeded'));

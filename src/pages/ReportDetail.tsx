@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SmoothTextArea } from '../components/ui/SmoothTextArea';
-import { auth } from '../lib/firebase';
-import { useReportStore } from '../store/useReportStore';
+import { getDoc, doc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
+import { useReportStore, type Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
-import { canViewReport, isPubliclyVisibleReport } from '../lib/reportPermissions';
+import { isPubliclyVisibleReport } from '../lib/reportPermissions';
 import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, ChevronDown, Sparkles, AlertTriangle, X, Columns, Rows } from 'lucide-react';
 
 const REACTIONS = [
@@ -21,7 +22,12 @@ export const ReportDetail = () => {
   const navigate = useNavigate();
   const { reports, addComment, getComments, markAsRead, init } = useReportStore();
   const { user: authUser } = useAuthStore();
-  const report = reports.find(r => r.id === id);
+  // D（表示側畳み込み）で store から重複docが除外され、ディープリンク先の id が
+  // store に無いことがある。その場合 Firestore から単発 getDoc して表示する（読み取りのみ・非破壊）。
+  const [fallbackReport, setFallbackReport] = useState<Report | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const storeReport = reports.find(r => r.id === id);
+  const report = storeReport || (fallbackReport && fallbackReport.id === id ? fallbackReport : null);
 
   const user = authUser || (typeof window !== 'undefined' ? (window as any).currentUser : null);
 
@@ -43,6 +49,36 @@ export const ReportDetail = () => {
     const unsub = init();
     return () => unsub();
   }, [id, init]);
+
+  // store に無い id は Firestore から単発取得してフォールバック表示（読み取りのみ・書き込みしない）。
+  useEffect(() => {
+    if (storeReport) {
+      // store が最優先。見つかったらフォールバックは破棄し、resolving も残さない。
+      setFallbackReport(null);
+      setResolving(false);
+      return;
+    }
+    if (!id) return;
+    let cancelled = false;
+    setResolving(true);
+    getDoc(doc(db, 'reports', id))
+      .then((snap) => {
+        if (cancelled) return;
+        if (snap.exists()) {
+          // 表示専用：weekNumber は data をそのまま採用（自動補正・updateDoc はしない）。
+          setFallbackReport({ id: snap.id, ...snap.data() } as Report);
+        } else {
+          setFallbackReport(null);
+        }
+      })
+      .catch((e) => {
+        console.error('ReportDetail fallback getDoc failed:', e);
+      })
+      .finally(() => {
+        if (!cancelled) setResolving(false);
+      });
+    return () => { cancelled = true; };
+  }, [id, storeReport]);
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -76,11 +112,13 @@ export const ReportDetail = () => {
 
   useEffect(() => {
     if (report && user?.uid) {
-      markAsRead(report.id, user.uid);
+      // 「見たよ」の書き込み（readBy updateDoc＋著者通知）は store 由来のレポートだけに限定。
+      // fallback getDoc で開いた（storeに無い＝畳み込みで隠れたdoc/直リンク）レポートは読み取り専用。
+      if (storeReport) markAsRead(report.id, user.uid);
       const unsubscribe = getComments(report.id, (cmts) => setComments(cmts));
       return () => unsubscribe();
     }
-  }, [report, user?.uid, getComments, markAsRead]);
+  }, [report, storeReport, user?.uid, getComments, markAsRead]);
 
   // 下部固定バーの実高を ResizeObserver で追従（bottomレイアウト・非たたみ時のみ）
   useEffect(() => {
@@ -101,13 +139,18 @@ export const ReportDetail = () => {
   const isOwner = user?.uid === report?.authorId;
   const { viewMode } = useAuthStore();
   const activeRole = isMaster && viewMode ? viewMode : user?.role;
+  const currentUid = user?.uid || (user as any)?.id || null;
 
-  // 権限チェック（共有述語に集約）: BMレポートの店長直アクセスも塞ぐ
-  if (report && !canViewReport(report, activeRole)) {
+  // 権限チェック（共有述語に集約）: authorRole だけでなく draft/未来予約も判定する
+  // isPubliclyVisibleReport に統一。fallback getDoc は status 無関係に取得するため、
+  // 他人の下書き・他人の未来予約の直リンク露出をここで塞ぐ（自分のものは isOwner で従来どおり閲覧可）。
+  if (report && !isPubliclyVisibleReport(report, activeRole, currentUid)) {
     return <div className="text-center py-20 text-ink-soft font-bold">閲覧権限がありません。</div>;
   }
 
-  if (!report) return <div className="text-center py-20 text-ink-soft font-bold">レポートが見つからないか、削除されました。</div>;
+  if (!report) return resolving
+    ? <div className="text-center py-20 text-ink-soft font-bold">読み込み中…</div>
+    : <div className="text-center py-20 text-ink-soft font-bold">レポートが見つからないか、削除されました。</div>;
 
   const sameWeekReports = reports.filter(r => r.weekNumber === report.weekNumber && r.year === report.year);
   const maxAmKpt = Math.max(0, ...sameWeekReports.map(r => r.reactions?.find((re: any) => re.type === 'best_kpt_am')?.count || 0));
@@ -132,7 +175,7 @@ export const ReportDetail = () => {
   // ↑↓ 他スタッフKPT横断ナビ用リスト（ストアは createdAt 降順ソート済み＝一覧と同じ並び）。
   // 公開可否述語で一覧(MainBoard)と集合を一致させ、他人の下書き/未来予約には飛べないようにする。
   // ※月(selectedMonth)/filterRole は MainBoard 固有のローカルUIのため、別画面のここには持ち込まない。
-  const currentUid = user?.uid || (user as any)?.id || null;
+  // currentUid / activeRole は描画ゲートより前で算出済み（二重定義しない）。
   const viewableReports = reports.filter(r => isPubliclyVisibleReport(r, activeRole, currentUid));
   const currentIndex = viewableReports.findIndex(r => r.id === report.id);
   const prevReport = currentIndex > 0 ? viewableReports[currentIndex - 1] : null;

@@ -9,7 +9,7 @@ import { useReportStore, Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { Send, Check, Info, Plus, X, Calendar as CalendarIcon, History, Loader2, RotateCcw, Copy, AlertTriangle, ChevronLeft, ChevronDown, Save, Clock } from 'lucide-react';
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
-import { getFiscalWeek } from '../lib/dateUtils';
+import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 
 export const PostReport = () => {
   const { id } = useParams();
@@ -47,6 +47,7 @@ export const PostReport = () => {
     return () => clearTimeout(t);
   }, [toast]);
   const [confirmResend, setConfirmResend] = useState(false);
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false);
 
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDate, setNewTaskDate] = useState('');
@@ -258,55 +259,37 @@ export const PostReport = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (isSubmitting) return;
-    if (!isFormValid()) {
-      showToast('未入力の必須項目があります。Keep / Problem / Try をご確認ください。', 'error');
-      return;
-    }
+  // 重複判定キーは共通関数 normalizeKptContent（KPT全内容フィールドを正規化連結）を直接使う。
+
+  // 新規 published の実投稿本体（重複確認をパスした後・重複確認不要のときに呼ぶ）
+  const doPublishNew = async () => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
       showToast('ログイン状態が無効です。ページをリロードしてください。', 'error');
       return;
     }
-
+    setConfirmDuplicate(false);
     setIsSubmitting(true);
     try {
-      if (isEditMode && id) {
-        await updateReport(id, { ...formData, status: 'published' });
-        await persistTasks(currentUser);
-        showToast(isScheduled ? '予約投稿として保存しました' : 'レポートを更新しました', 'success');
-        setTimeout(() => navigate(`/report/${id}`), 700);
-      } else {
-        await addReport({
-          authorId: currentUser.uid,
-          authorName: formData.authorName,
-          authorRole: activeRole || '店長',
-          authorPhotoURL: user?.photoURL || '',
-          storeName: formData.storeName,
-          weekNumber: getFiscalWeek(new Date()),
-          year: new Date().getFullYear(),
-          ...formData,
-          status: 'published'
-        });
-        await persistTasks(currentUser);
-        if (user?.uid) {
-          localStorage.removeItem(`kpt_draft_${user.uid}`);
-          localStorage.setItem(`kpt_last_submitted_${user.uid}`, JSON.stringify({
-            authorId: currentUser.uid,
-            authorName: formData.authorName,
-            authorRole: activeRole || '店長',
-            authorPhotoURL: user?.photoURL || '',
-            storeName: formData.storeName,
-            weekNumber: getFiscalWeek(new Date()),
-            year: new Date().getFullYear(),
-            ...formData,
-            status: 'published'
-          }));
-        }
-        showToast(isScheduled ? '予約投稿を登録しました' : '週次報告を送信しました', 'success');
-        setTimeout(() => navigate('/'), 700);
+      const payload = {
+        authorId: currentUser.uid,
+        authorName: formData.authorName,
+        authorRole: activeRole || '店長',
+        authorPhotoURL: user?.photoURL || '',
+        storeName: formData.storeName,
+        weekNumber: getFiscalWeek(new Date()),
+        year: new Date().getFullYear(),
+        ...formData,
+        status: 'published' as const
+      };
+      await addReport(payload);
+      await persistTasks(currentUser);
+      if (user?.uid) {
+        localStorage.removeItem(`kpt_draft_${user.uid}`);
+        localStorage.setItem(`kpt_last_submitted_${user.uid}`, JSON.stringify(payload));
       }
+      showToast(isScheduled ? '予約投稿を登録しました' : '週次報告を送信しました', 'success');
+      setTimeout(() => navigate('/'), 700);
     } catch (e) {
       console.error('Submission error:', e);
       showToast('保存に失敗しました: ' + e, 'error');
@@ -314,8 +297,69 @@ export const PostReport = () => {
     }
   };
 
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    // 二連打レース防止：判定前に即ロックする。早期returnの各所で必ず解除する。
+    setIsSubmitting(true);
+    if (!isFormValid()) {
+      showToast('未入力の必須項目があります。Keep / Problem / Try をご確認ください。', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      showToast('ログイン状態が無効です。ページをリロードしてください。', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 編集モードは従来どおり上書き保存（重複確認の対象外）
+    if (isEditMode && id) {
+      setIsSubmitting(true);
+      try {
+        await updateReport(id, { ...formData, status: 'published' });
+        await persistTasks(currentUser);
+        showToast(isScheduled ? '予約投稿として保存しました' : 'レポートを更新しました', 'success');
+        setTimeout(() => navigate(`/report/${id}`), 700);
+      } catch (e) {
+        console.error('Submission error:', e);
+        showToast('保存に失敗しました: ' + e, 'error');
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 新規 published のみ簡易冪等化：同一 authorId＋weekNumber＋year かつ
+    // KPT内容フィールド全部が完全一致する published が既にあれば確認モーダルを出す。
+    // 予約投稿・編集・下書きは対象外。文面が異なる別KPTは一致しないので通常通り投稿できる。
+    if (!isScheduled) {
+      const wk = getFiscalWeek(new Date());
+      const yr = new Date().getFullYear();
+      const key = normalizeKptContent(formData);
+      const hasDuplicate = useReportStore.getState().reports.some((r) =>
+        r.status !== 'draft' &&
+        r.authorId === currentUser.uid &&
+        r.weekNumber === wk &&
+        r.year === yr &&
+        normalizeKptContent(r) === key
+      );
+      if (hasDuplicate) {
+        // 確認モーダルを表示。ここでロックを解除する（重要）:
+        // 「重複して投稿」ボタンは disabled={isSubmitting} なので、true のままだと押せなくなる。
+        // 二連打レース（重複なし判定での二重 addReport）は入口の setIsSubmitting(true) で既に防止済み。
+        setConfirmDuplicate(true);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    await doPublishNew();
+  };
+
   const handleSaveDraft = async () => {
+    if (isSubmitting) return;
     if (!user?.uid) return;
+    setIsSubmitting(true);
     const draftData = {
       authorId: user.uid,
       authorName: formData.authorName || user.name || '',
@@ -341,6 +385,7 @@ export const PostReport = () => {
     } catch (e) {
       console.error(e);
       showToast('下書き保存に失敗しました', 'error');
+      setIsSubmitting(false);
     }
   };
 
@@ -408,6 +453,46 @@ export const PostReport = () => {
                   className="tap flex-1 rounded-xl bg-gradient-to-r from-qb-blue to-qb-cyan text-white font-black shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <Send size={16} /> 再送信する
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 重複投稿の確認モーダル（今週分と同一内容がすでにある場合） */}
+      <AnimatePresence>
+        {confirmDuplicate && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+            onClick={() => { setConfirmDuplicate(false); setIsSubmitting(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 border border-line"
+            >
+              <div className="flex flex-col items-center text-center gap-2 mb-5">
+                <span className="grid place-items-center h-12 w-12 rounded-2xl bg-qb-blue/10 text-qb-blue">
+                  <AlertTriangle size={24} />
+                </span>
+                <h3 className="text-lg font-black text-ink">今週分と同じ内容があります</h3>
+                <p className="text-sm font-bold text-ink-soft leading-relaxed">今週分と同じ内容がすでに投稿されています。重複して投稿しますか？</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setConfirmDuplicate(false); setIsSubmitting(false); }}
+                  className="tap flex-1 rounded-xl bg-canvas text-ink-soft font-bold border border-line active:scale-95 transition-all"
+                >
+                  やめる
+                </button>
+                <button
+                  onClick={doPublishNew}
+                  disabled={isSubmitting}
+                  className="tap flex-1 rounded-xl bg-gradient-to-r from-qb-blue to-qb-cyan text-white font-black shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Send size={16} /> 重複して投稿
                 </button>
               </div>
             </motion.div>
