@@ -46,6 +46,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     await signOut(auth);
     sessionStorage.removeItem('session_last_login_recorded');
+    // レポート購読を止めて完全にクリア（別ユーザーへの残存を防止）。
+    // 循環import回避のため動的import。
+    try {
+      const { useReportStore } = await import('./useReportStore');
+      useReportStore.getState().reset();
+    } catch (e) {
+      console.error('reportStore reset on logout failed', e);
+    }
   },
   
   updateUserRole: async (targetUserId: string, newRole: '店長' | 'AM' | 'BM') => {

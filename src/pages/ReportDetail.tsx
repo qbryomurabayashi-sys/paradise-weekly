@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SmoothTextArea } from '../components/ui/SmoothTextArea';
@@ -6,7 +6,8 @@ import { auth } from '../lib/firebase';
 import { useReportStore } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
-import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, Sparkles, AlertTriangle, X, Columns, Rows } from 'lucide-react';
+import { canViewReport, isPubliclyVisibleReport } from '../lib/reportPermissions';
+import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, ChevronDown, Sparkles, AlertTriangle, X, Columns, Rows } from 'lucide-react';
 
 const REACTIONS = [
   { type: 'like', icon: ThumbsUp, label: 'いいね', color: 'text-qb-blue', bg: 'bg-qb-blue/10' },
@@ -31,6 +32,10 @@ export const ReportDetail = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [presetHeight, setPresetHeight] = useState<'compact' | 'normal' | 'large'>('normal');
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // 下部固定バーの実高を測って本文の余白を動的追従させる（被り解消）
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
 
   // Scroll to top on mount / id change
   useEffect(() => {
@@ -77,13 +82,28 @@ export const ReportDetail = () => {
     }
   }, [report, user?.uid, getComments, markAsRead]);
 
+  // 下部固定バーの実高を ResizeObserver で追従（bottomレイアウト・非たたみ時のみ）
+  useEffect(() => {
+    if (layoutMode !== 'bottom' || isMinimized) {
+      setBottomBarHeight(0);
+      return;
+    }
+    const el = bottomBarRef.current;
+    if (!el) return;
+    const measure = () => setBottomBarHeight(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [layoutMode, isMinimized, presetHeight]);
+
   const isMaster = user?.role === 'BM';
   const isOwner = user?.uid === report?.authorId;
   const { viewMode } = useAuthStore();
   const activeRole = isMaster && viewMode ? viewMode : user?.role;
 
-  // 権限チェック: AMのレポートはAM and BMのみ閲覧可能
-  if (report?.authorRole === 'AM' && activeRole !== 'AM' && activeRole !== 'BM') {
+  // 権限チェック（共有述語に集約）: BMレポートの店長直アクセスも塞ぐ
+  if (report && !canViewReport(report, activeRole)) {
     return <div className="text-center py-20 text-ink-soft font-bold">閲覧権限がありません。</div>;
   }
 
@@ -108,6 +128,23 @@ export const ReportDetail = () => {
   const topBarStyle = bestType === 'BM' ? 'bg-gradient-to-r from-qb-cyan to-qb-blue'
                     : bestType === 'AM' ? 'bg-gradient-to-r from-qb-blue to-qb-blue-dark'
                     : bestType === 'SM' ? 'bg-gradient-to-r from-purple-400 to-fuchsia-500' : '';
+
+  // ↑↓ 他スタッフKPT横断ナビ用リスト（ストアは createdAt 降順ソート済み＝一覧と同じ並び）。
+  // 公開可否述語で一覧(MainBoard)と集合を一致させ、他人の下書き/未来予約には飛べないようにする。
+  // ※月(selectedMonth)/filterRole は MainBoard 固有のローカルUIのため、別画面のここには持ち込まない。
+  const currentUid = user?.uid || (user as any)?.id || null;
+  const viewableReports = reports.filter(r => isPubliclyVisibleReport(r, activeRole, currentUid));
+  const currentIndex = viewableReports.findIndex(r => r.id === report.id);
+  const prevReport = currentIndex > 0 ? viewableReports[currentIndex - 1] : null;
+  const nextReport = currentIndex >= 0 && currentIndex < viewableReports.length - 1 ? viewableReports[currentIndex + 1] : null;
+
+  // 下部固定バーの被り解消：bottomレイアウト時のみ本文の下余白をバー実高に追従
+  const bottomContentPadding =
+    layoutMode !== 'bottom'
+      ? undefined
+      : isMinimized
+        ? 'calc(env(safe-area-inset-bottom) + 88px)' // たたみ時＝再表示ボタン分の余白
+        : `calc(${bottomBarHeight}px + env(safe-area-inset-bottom) + 16px)`;
 
   const handleSendComment = async () => {
     const currentUser = user || auth.currentUser;
@@ -375,15 +412,58 @@ export const ReportDetail = () => {
 
   return (
     <>
-      <div className={`mx-auto px-4 pt-4 animate-fade-in ${layoutMode === 'split' ? 'max-w-7xl h-screen flex flex-col pb-4' : 'max-w-3xl pb-28 space-y-5'}`}>
+      <div
+        className={`mx-auto px-4 pt-4 animate-fade-in ${layoutMode === 'split' ? 'max-w-7xl h-screen flex flex-col pb-4' : 'max-w-3xl space-y-5'}`}
+        style={bottomContentPadding ? { paddingBottom: bottomContentPadding } : undefined}
+      >
         {/* ヘッダーバー */}
-        <div className="flex items-center justify-between gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="tap flex items-center gap-1.5 text-ink-soft font-bold hover:text-ink transition-all text-sm"
-          >
-            <ChevronLeft size={18} /> 戻る
-          </button>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              onClick={() => navigate('/')}
+              className="tap flex items-center gap-1 text-ink-soft font-bold hover:text-ink transition-all text-sm min-h-[44px] shrink-0"
+            >
+              <ChevronLeft size={18} /> 戻る
+            </button>
+
+            {/* ↑↓ 他スタッフKPT横断ナビ */}
+            <div className="flex items-center gap-1 min-w-0">
+              <button
+                onClick={() => prevReport && navigate(`/report/${prevReport.id}`)}
+                disabled={!prevReport}
+                title={prevReport ? `前へ: ${formatStaffName(prevReport.authorName)}` : '前のKPTはありません'}
+                className="tap flex items-center gap-1 rounded-xl border border-line bg-white px-2 min-h-[44px] text-qb-blue transition-all active:scale-95 hover:border-qb-cyan disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <ChevronUp size={16} className="shrink-0" />
+                <span className="flex flex-col items-start leading-none min-w-0">
+                  <span className="text-[10px] font-black text-qb-gray">前へ</span>
+                  {prevReport && (
+                    <span className="text-[11px] font-bold text-ink truncate max-w-[64px]">
+                      {formatStaffName(prevReport.authorName)}
+                      <span className="text-qb-gray">・{displayRole(prevReport.authorRole)}</span>
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                onClick={() => nextReport && navigate(`/report/${nextReport.id}`)}
+                disabled={!nextReport}
+                title={nextReport ? `次へ: ${formatStaffName(nextReport.authorName)}` : '次のKPTはありません'}
+                className="tap flex items-center gap-1 rounded-xl border border-line bg-white px-2 min-h-[44px] text-qb-blue transition-all active:scale-95 hover:border-qb-cyan disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <ChevronDown size={16} className="shrink-0" />
+                <span className="flex flex-col items-start leading-none min-w-0">
+                  <span className="text-[10px] font-black text-qb-gray">次へ</span>
+                  {nextReport && (
+                    <span className="text-[11px] font-bold text-ink truncate max-w-[64px]">
+                      {formatStaffName(nextReport.authorName)}
+                      <span className="text-qb-gray">・{displayRole(nextReport.authorRole)}</span>
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
 
           {/* デスクトップ用レイアウト切替 */}
           <div className="hidden md:flex items-center gap-1 bg-surface p-1 rounded-full border border-line text-xs font-black">
@@ -502,6 +582,7 @@ export const ReportDetail = () => {
         <AnimatePresence>
           {!isMinimized && (
             <motion.div
+              ref={bottomBarRef}
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}

@@ -17,6 +17,7 @@ import { format, addMonths } from 'date-fns';
 import { ShiftShortagesAccordion } from '../components/ui/ShiftShortagesAccordion';
 import { RatingStars } from '../components/ui/Indicators';
 import { displayRole, formatStaffName, abbreviateStoreName } from '../lib/formatUtils';
+import { isPubliclyVisibleReport } from '../lib/reportPermissions';
 
 let _globalTasksUnsub: any = null;
 let _cachedTasks: any[] = [];
@@ -326,18 +327,6 @@ export const MainBoard = () => {
 
   // 閲覧モードの決定（上部で定義済み）
 
-  const filteredReports = reports.filter(r => {
-    // 役割によるフィルター
-    if (filterRole && r.authorRole !== filterRole) return false;
-    
-    // 権限による閲覧制限: AMレポートはAMとBMのみ
-    if (r.authorRole === 'AM' && activeRole !== 'AM' && activeRole !== 'BM') return false;
-    // BMのレポートは通常存在しないが念のため
-    if (r.authorRole === 'BM' && activeRole !== 'BM') return false;
-
-    return true;
-  });
-
   const toggleExpand = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // 親のクリックイベント（詳細へ遷移）を防ぐ
     setExpandedIds(prev => 
@@ -461,24 +450,15 @@ export const MainBoard = () => {
   // Calculate grouped and filtered reports
   const displayReports = React.useMemo(() => {
     const [year, month] = selectedMonth.split('-');
-    const now = new Date().toISOString();
+    const currentUid = user?.uid || (user as any)?.id || null;
     return reports.filter(r => {
       const d = new Date(r.createdAt);
       return d.getFullYear().toString() === year && String(d.getMonth() + 1).padStart(2, '0') === month;
     }).filter(r => {
-       // 未公開レポートは本人のみ閲覧可能
-       const isDraft = r.status === 'draft';
-       const isScheduled = r.status === 'published' && r.scheduledFor && r.scheduledFor > now;
-       if (isDraft || isScheduled) {
-         if (r.authorId !== user?.uid && r.authorId !== (user as any)?.id) return false;
-       }
-
-       // 役割によるフィルター
+       // 公開可否（閲覧ロール＋未公開の除外）を共通述語に集約。ナビ対象と集合を一致させる
+       if (!isPubliclyVisibleReport(r, activeRole, currentUid)) return false;
+       // 役割によるフィルター（MainBoard固有UI）
        if (filterRole && r.authorRole !== filterRole) return false;
-       // 権限による閲覧制限: AMレポートはAMとBMのみ
-       if (r.authorRole === 'AM' && activeRole !== 'AM' && activeRole !== 'BM') return false;
-       // BMのレポートは通常存在しないが念のため
-       if (r.authorRole === 'BM' && activeRole !== 'BM') return false;
        return true;
     });
   }, [reports, selectedMonth, filterRole, activeRole, user]);

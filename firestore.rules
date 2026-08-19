@@ -17,28 +17,34 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
 
+    // role × authorRole の閲覧可否（A-2 の visibleAuthorRoles と一致させる）
+    //   - BM   : 全 authorRole 可
+    //   - AM   : authorRole が '店長' or 'AM'
+    //   - 店長 : authorRole が '店長' のみ
+    function canViewAuthorRole(authorRole) {
+      return isBM()
+        || (isAM() && (authorRole in ['店長', 'AM']))
+        || (isStoreManager() && (authorRole in ['店長']));
+    }
+
     // --- Users Collection ---
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
-      
-      // Permit creation of profile with default role "店長" or if creator is BM / Admin
+
       allow create: if isSignedIn() && (
         (request.auth.uid == userId && incoming().role == '店長') ||
         isBM()
       );
-      
-      // Allow user updates: regular users can only change non-sensitive profile parameters,
-      // while only admins (BM) can edit roles, store assignments, or sensitive settings.
+
       allow update: if isSignedIn() && (
-        (request.auth.uid == userId && 
+        (request.auth.uid == userId &&
          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'lastLoginAt'])) ||
         isBM()
       );
-      
+
       allow delete: if isBM();
 
-      // Notifications Subcollection under Users
       match /notifications/{notificationId} {
         allow get, list, update, delete: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn() && incoming().keys().hasAll(['isRead', 'createdAt']);
@@ -80,13 +86,31 @@ service cloud.firestore {
 
     // --- Weekly Reports ---
     match /reports/{reportId} {
-      // Draft reports are isolated strictly to their creator or BM (admin override)
-      allow get: if isSignedIn() && (existing().status != 'draft' || existing().authorId == request.auth.uid || isBM());
-      // Allow list for signed in users (draft filtering is enforced in application logic)
-      allow list: if isSignedIn();
+      // get: 自分のもの or BM は常に可。それ以外は「公開済み かつ role×authorRole 突合」。
+      //   ※ 他人の下書きは従来どおり不可（BMのみ）。BMの authorRole='BM' レポートは店長/AMからは不可になる。
+      allow get: if isSignedIn() && (
+        existing().authorId == request.auth.uid ||
+        isBM() ||
+        (existing().status != 'draft' && canViewAuthorRole(existing().authorRole))
+      );
+
+      // list を厳格化する上での注意（重要）:
+      //   Firestore の list ルールはクエリ全体に対して評価されるため、canViewAuthorRole を有効化すると、
+      //   クライアント側の購読クエリ（A-2）が where('authorRole','in',[<自ロールの許可集合>]) で
+      //   ルールの許可集合と「完全一致」していない限り、list 全体が permission-denied で失敗する。
+      //     - 店長 → where('authorRole','in',['店長'])
+      //     - AM   → where('authorRole','in',['店長','AM'])
+      //     - BM   → where 無し（全件）… isBM() が true になり全 authorRole を許可
+      //   したがって A-2 の visibleAuthorRoles() とこの関数の集合は必ず一致させること。
+      //   （下書きの status での絞り込みは list では表現できないため、他人の下書き除外は従来どおり
+      //     アプリ側ロジックで担保。get 側では上記のとおり他人の下書きを拒否している。）
+      allow list: if isSignedIn() && (
+        isBM() ||
+        canViewAuthorRole(existing().authorRole)
+      );
+
       allow create: if isSignedIn() && incoming().authorId == request.auth.uid;
-      
-      // Restrict modification to creator or BM, or allow external safe writes limited ONLY to commentCount, reactions, or readBy arrays
+
       allow update: if isSignedIn() && (
         (existing().authorId == request.auth.uid && incoming().authorId == existing().authorId) ||
         isBM() ||
@@ -94,12 +118,10 @@ service cloud.firestore {
       );
       allow delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
 
-      // Comments Subcollection under Reports
       match /comments/{commentId} {
         allow read: if isSignedIn();
-        // Prevent orphaned comment injection by ensuring the parent report document exists
-        allow create: if isSignedIn() && 
-                      incoming().authorId == request.auth.uid && 
+        allow create: if isSignedIn() &&
+                      incoming().authorId == request.auth.uid &&
                       exists(/databases/$(database)/documents/reports/$(reportId));
         allow update: if isSignedIn() && (
           existing().authorId == request.auth.uid ||
@@ -133,13 +155,11 @@ service cloud.firestore {
       allow get: if isSignedIn() && (isBM() || isAM() || request.auth.uid in existing().memberUids || existing().authorId == request.auth.uid);
       allow list: if isSignedIn() && (isBM() || isAM() || request.auth.uid in existing().memberUids || existing().authorId == request.auth.uid);
       allow write: if isSignedIn() && (isBM() || isAM() || isStoreManager());
-      
+
       match /messages/{messageId} {
-        // Only members or admins can read messages
         allow read: if isSignedIn() && (isBM() || isAM() || request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.memberUids);
-        // Verify parent project group exists before allowing chat insertion
-        allow create: if isSignedIn() && 
-                      incoming().authorId == request.auth.uid && 
+        allow create: if isSignedIn() &&
+                      incoming().authorId == request.auth.uid &&
                       exists(/databases/$(database)/documents/projects/$(projectId));
         allow update, delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
       }
@@ -154,7 +174,6 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow read: if isSignedIn();
       allow create: if isBM() || isAM();
-      // Allow users to update seenBy and hiddenBy for read receipts and settings
       allow update: if isBM() || isAM() || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['seenBy', 'hiddenBy']));
       allow delete: if isBM();
     }

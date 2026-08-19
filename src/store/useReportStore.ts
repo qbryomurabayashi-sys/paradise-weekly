@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, limit } from 'firebase/firestore';
 import { getFiscalWeek } from '../lib/dateUtils';
+import { useAuthStore } from './useAuthStore';
+import { visibleAuthorRoles } from '../lib/reportPermissions';
 
 export interface Reaction {
   type: string;
@@ -81,9 +83,11 @@ interface ReportState {
   addCommentReaction: (reportId: string, commentId: string, reactionType: string, user: { uid: string, name?: string }) => Promise<void>;
   markAsRead: (reportId: string, userId: string) => Promise<void>;
   init: () => () => void;
+  reset: () => void;
 }
 
 let _reportsUnsub: any = null;
+let _reportsUnsubRole: string | null = null;
 
 export const useReportStore = create<ReportState>((set, get) => ({
   reports: [],
@@ -358,11 +362,30 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
   init: () => {
-    if (_reportsUnsub) return () => {};
+    // 閲覧者ロールを確定させてから購読する。取れなければ購読を張らず後続呼び出しに委ねる。
+    // （MainBoard の useEffect は依存配列に user?.role を含むため、ロール確定時に再度 init が呼ばれる）
+    const role = useAuthStore.getState().user?.role ?? null;
+    if (!role) return () => {};
 
-    const qReports = query(collection(db, 'reports'), limit(150));
-    
-    if (!_reportsUnsub) {
+    // 同じロールで購読済みなら何もしない。ロールが変わったら張り直す。
+    if (_reportsUnsub && _reportsUnsubRole === role) return () => {};
+    if (_reportsUnsub) {
+      _reportsUnsub();
+      _reportsUnsub = null;
+      // 権限降格(AM→店長)等で旧ロールのデータが一瞬残らないよう即クリア
+      set({ reports: [] });
+    }
+    _reportsUnsubRole = role;
+
+    // ロール別に authorRole を絞る（BM は null＝全件）。
+    // createdAt 降順の orderBy を付け、limit(150) の切り出しをサーバ側で時系列保証する
+    // （createdAt は ISO 文字列保存なので辞書順＝時系列で正しく降順になる）。
+    const roles = visibleAuthorRoles(role);
+    const qReports = roles
+      ? query(collection(db, 'reports'), where('authorRole', 'in', roles), orderBy('createdAt', 'desc'), limit(150))
+      : query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(150));
+
+    {
       _reportsUnsub = onSnapshot(qReports, (snapshot) => {
         const rawReports = snapshot.docs.map((docSnap) => {
           const data = docSnap.data();
@@ -406,5 +429,14 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
 
     return () => {};
+  },
+  // ログアウト/ロール切替時に購読を止めてレポートを完全にクリアする
+  reset: () => {
+    if (_reportsUnsub) {
+      _reportsUnsub();
+      _reportsUnsub = null;
+    }
+    _reportsUnsubRole = null;
+    set({ reports: [] });
   },
 }));
