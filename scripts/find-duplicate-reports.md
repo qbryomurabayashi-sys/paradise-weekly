@@ -7,6 +7,12 @@
 > Firestore のデータ削除は、社長の承認が取れてから、部長が実行します。
 > 勝手に `--apply` で実行しないこと。
 
+> ★**正はアプリ内のBM専用「KPT重複クリーンアップ」パネル**（`src/pages/AdminDashboard.tsx`）です。
+> このスクリプトは補助であり、**weekNumber は createdAt からの `getFiscalWeek` 再計算値でグループ化する点も含め、
+> アプリ側（表示側畳み込みロジックD＝`src/store/useReportStore.ts`）が最終基準**です。
+> このスクリプトは週の再計算を行わず保存済み `weekNumber` をそのまま使うため、週補正が未反映のデータでは
+> アプリ側と結果が食い違う可能性があります。最終判断・実削除はアプリ側パネルで行うのが確実です。
+
 ---
 
 ## 何をするスクリプトか
@@ -14,9 +20,10 @@
 `scripts/dedupeReports.js` は `reports` コレクションを走査し、次のキーで重複を判定します。
 
 - 重複判定キー: `authorId` + `weekNumber` + `year` + 正規化本文
-  （`keep` + `problem_gap` + `try_what` を trim・空白正規化して連結）
+  （`keep` / `problem_gap` / `problem_ideal` / `try_who` / `try_when` / `try_what` / `try_why` の
+  **全7項目** を trim・空白正規化して **U+0001 区切り** で連結。アプリ側 `normalizeKptContent` と同一）
 - 残す1件の既定ルール:
-  1. **エンゲージメント最大**（reactions合計 + commentCount + readBy数）を残す
+  1. **エンゲージメント最大**（reactions合計 + commentCount。**readBy（既読数）は含めない**）を残す
   2. 同点なら **createdAt が最古** を残す
   3. それ以外を「削除候補」として列挙
 - 下書き（`status === 'draft'`）は対象外。

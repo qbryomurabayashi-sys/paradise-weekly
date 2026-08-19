@@ -15,9 +15,17 @@
  *   3) 実削除（社長承認後のみ。--apply かつ APPLY_CONFIRM=true の両方が必要）:
  *        node ./scripts/dedupeReports.js --apply
  *
- * 重複判定キー: authorId + weekNumber + year + 正規化本文（keep+problem_gap+try_what を trim 連結）
- * 残す1件の既定ルール: エンゲージメント最大（reactions合計 + commentCount + readBy数）。
+ * 重複判定キー: authorId + weekNumber + year + 正規化本文
+ *   （keep / problem_gap / problem_ideal / try_who / try_when / try_what / try_why の7項目を
+ *    trim・空白正規化し U+0001 区切りで連結）
+ * 残す1件の既定ルール: エンゲージメント最大（reactions合計 + commentCount。readBy は含めない）。
  *                      同点なら createdAt が最古を残す。それ以外を削除候補にする。
+ *
+ * ★正はアプリ内のBM専用「KPT重複クリーンアップ」パネル（src/pages/AdminDashboard.tsx）。
+ *   このスクリプトは補助であり、weekNumber は createdAt からの getFiscalWeek 再計算値で
+ *   グループ化する点も含め、アプリ側（表示側畳み込みロジックD＝useReportStore.ts）が最終基準です。
+ *   このスクリプトは createdAt からの週再計算を行わず、保存済み weekNumber をそのまま使うため、
+ *   週補正が未反映のデータでは結果が食い違う可能性があります。最終判断はアプリ側で行ってください。
  */
 
 // ==== 二重ガード：本当に削除するときだけ true に書き換える ==================
@@ -76,9 +84,11 @@ async function main() {
 
 // ---- 共通ロジック（ブラウザConsole版とも共有できる純関数） ----------------
 function normalizeContent(r) {
-  return [r.keep, r.problem_gap, r.try_what]
+  // KPT内容フィールド全7項目を trim・空白正規化して U+0001 区切りで連結。
+  // アプリ側 src/lib/dateUtils.ts の normalizeKptContent と同一仕様（正はアプリ側）。
+  return [r.keep, r.problem_gap, r.problem_ideal, r.try_who, r.try_when, r.try_what, r.try_why]
     .map((v) => String(v == null ? '' : v).trim().replace(/\s+/g, ' '))
-    .join('');
+    .join('\u0001');
 }
 
 function tsMillis(createdAt) {
@@ -95,8 +105,8 @@ function engagement(r) {
     ? r.reactions.reduce((s, x) => s + (Number(x.count) || (Array.isArray(x.userIds) ? x.userIds.length : 0)), 0)
     : 0;
   const comments = Number(r.commentCount) || 0;
-  const reads = Array.isArray(r.readBy) ? r.readBy.length : 0;
-  return reactionSum + comments + reads;
+  // readBy（既読数）は含めない（アプリ側Dと同一仕様）。
+  return reactionSum + comments;
 }
 
 function buildDuplicateGroups(reports) {
