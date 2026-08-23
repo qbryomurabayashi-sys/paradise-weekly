@@ -261,10 +261,10 @@ export const ReportDetail = () => {
     const givenStyle = activeRole === 'BM' ? 'bg-gradient-to-r from-qb-cyan to-qb-blue text-white border-transparent shadow-md'
                      : activeRole === 'AM' ? 'bg-gradient-to-r from-qb-blue to-qb-blue-dark text-white border-transparent shadow-md'
                      : 'bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white border-transparent shadow-md';
-    // 未選定でも「押せるボタン」だと分かるよう、色付き背景+枠線+影で明確なアフォーダンスを持たせる
-    const idleStyle = activeRole === 'BM' ? 'bg-qb-cyan/10 text-qb-blue border-qb-cyan/40 shadow-sm hover:bg-qb-cyan/20 hover:border-qb-cyan hover:shadow-md'
-                     : activeRole === 'AM' ? 'bg-qb-blue/10 text-qb-blue-dark border-qb-blue/40 shadow-sm hover:bg-qb-blue/20 hover:border-qb-blue hover:shadow-md'
-                     : 'bg-purple-50 text-purple-600 border-purple-300 shadow-sm hover:bg-purple-100 hover:border-purple-400 hover:shadow-md';
+    // 未選定は「押せるアウトラインボタン」＝白背景+濃い枠線+影。塗り背景は選定済み(givenStyle)だけの見た目にして選定済みと混同しないようにする
+    const idleStyle = activeRole === 'BM' ? 'bg-white text-qb-blue border-2 border-qb-cyan/60 shadow-md hover:bg-qb-cyan/5 hover:border-qb-cyan hover:shadow-lg'
+                     : activeRole === 'AM' ? 'bg-white text-qb-blue-dark border-2 border-qb-blue/60 shadow-md hover:bg-qb-blue/5 hover:border-qb-blue hover:shadow-lg'
+                     : 'bg-white text-purple-600 border-2 border-purple-400 shadow-md hover:bg-purple-50 hover:border-purple-500 hover:shadow-lg';
 
     return (
       <div className="pt-3 border-t border-line">
