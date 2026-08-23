@@ -15,7 +15,11 @@ interface Possession {
   lastCheckedAt?: string;
   checkMethod?: 'photo' | 'physical';
   lastCheckedByName?: string;
+  photoStreak?: number; // 写真確認が連続した月数（現物確認で0にリセット）
 }
+
+// 写真・現物確認ボタン／日付履歴が必要な所持タイプ（鍵・入館証のみ）
+const CHECKABLE_TYPES: Possession['type'][] = ['key', 'pass'];
 
 interface KeyPassRecord {
   id: string; // userId / staffId
@@ -49,6 +53,17 @@ const POSS_TYPES: { type: Possession['type']; label: string; icon: any; active: 
 
 const isRecentlyChecked = (iso?: string) =>
   !!iso && (new Date().getTime() - new Date(iso).getTime()) < 7 * 24 * 60 * 60 * 1000;
+
+const monthKey = (iso: string) => iso.slice(0, 7); // 'YYYY-MM'
+
+// prevKey の「翌月」が nowKey かどうか（年跨ぎ対応・タイムゾーンに依存しない整数演算）
+const isNextMonth = (prevKey: string, nowKey: string) => {
+  const [py, pm] = prevKey.split('-').map(Number);
+  const [ny, nm] = nowKey.split('-').map(Number);
+  const prevTotal = py * 12 + (pm - 1);
+  const nowTotal = ny * 12 + (nm - 1);
+  return nowTotal === prevTotal + 1;
+};
 
 export const KeyPassManagement = () => {
   const { user, viewMode } = useAuthStore();
@@ -143,6 +158,17 @@ export const KeyPassManagement = () => {
     });
   };
 
+  // 写真確認の連続月数を算出（現物確認や月が飛んだ場合はリセット）
+  const computePhotoStreak = (prev: Possession, method: 'photo' | 'physical', nowIso: string): number => {
+    if (method === 'physical') return 0;
+    if (!prev.lastCheckedAt || prev.checkMethod !== 'photo') return 1;
+    const prevKey = monthKey(prev.lastCheckedAt);
+    const nowKeyStr = monthKey(nowIso);
+    if (prevKey === nowKeyStr) return prev.photoStreak || 1; // 同月内の再確認はそのまま
+    if (isNextMonth(prevKey, nowKeyStr)) return (prev.photoStreak || 1) + 1;
+    return 1; // 月が飛んでいれば連続とみなさない
+  };
+
   // ---- possession (staff) operations : register / check / delete ----
   const staffFullName = (staff: any) => `${staff.lastName} ${staff.firstName}`;
 
@@ -169,8 +195,10 @@ export const KeyPassManagement = () => {
     const record = records.find(r => r.id === staff.id);
     const current = [...(record?.possessions || [])];
     if (!current[index]) return;
+    const prev = current[index];
     const now = new Date().toISOString();
-    current[index] = { ...current[index], lastCheckedAt: now, checkMethod: method, lastCheckedByName: user?.name };
+    const photoStreak = computePhotoStreak(prev, method, now);
+    current[index] = { ...prev, lastCheckedAt: now, checkMethod: method, lastCheckedByName: user?.name, photoStreak };
     try {
       await setDoc(doc(db, 'key_passes', staff.id), {
         userName: staffFullName(staff),
@@ -178,7 +206,11 @@ export const KeyPassManagement = () => {
         lastCheckedAt: now,
       }, { merge: true });
       upsertRecord(staff.id, staffFullName(staff), current, true);
-      showToast(`${method === 'photo' ? '写真' : '現物'}で確認しました`, 'success');
+      if (method === 'photo' && photoStreak >= 2) {
+        showToast('2ヶ月連続の写真確認です。次回は現物確認をお願いします', 'error');
+      } else {
+        showToast(`${method === 'photo' ? '写真' : '現物'}で確認しました`, 'success');
+      }
     } catch (e) { console.error(e); showToast('エラーが発生しました', 'error'); }
   };
 
@@ -188,7 +220,12 @@ export const KeyPassManagement = () => {
     const current = (record?.possessions || []);
     if (current.length === 0) return;
     const now = new Date().toISOString();
-    const next = current.map(p => ({ ...p, lastCheckedAt: now, checkMethod: method, lastCheckedByName: user?.name }));
+    // 確認ボタンが不要なタイプ（ポスト番号・金庫番号）はまとめて確認の対象外
+    const next = current.map(p =>
+      CHECKABLE_TYPES.includes(p.type)
+        ? { ...p, lastCheckedAt: now, checkMethod: method, lastCheckedByName: user?.name, photoStreak: computePhotoStreak(p, method, now) }
+        : p
+    );
     try {
       await setDoc(doc(db, 'key_passes', staff.id), {
         userName: staffFullName(staff),
@@ -271,29 +308,35 @@ export const KeyPassManagement = () => {
     return <Icon size={14} className={t.dot} />;
   };
 
-  const getAlertStores = () => {
+  const getAlertStoreDetails = () => {
     const today = new Date();
-    const alertStoreIds = new Set<string>();
+    const storeNamesMap = new Map<string, Set<string>>();
     staffs.forEach(staff => {
       const record = records.find(r => r.id === staff.id);
-      if (record && record.possessions && record.possessions.length > 0) {
-        const isUnchecked = record.possessions.some(p => {
-          if (!p.lastCheckedAt) return true;
-          const checkedDate = new Date(p.lastCheckedAt);
-          const isThisMonth = checkedDate.getMonth() === today.getMonth() && checkedDate.getFullYear() === today.getFullYear();
-          if (isThisMonth) return false;
-          const diffDays = (today.getTime() - checkedDate.getTime()) / (1000 * 60 * 60 * 24);
-          if (diffDays >= 31) return true;
-          if (today.getDate() > 15) return true;
-          return false;
-        });
-        if (isUnchecked && staff.storeId) alertStoreIds.add(staff.storeId);
+      // 写真・現物確認の対象は鍵・入館証のみ（金庫番号・ポスト番号は確認不要）
+      const checkable = (record?.possessions || []).filter(p => CHECKABLE_TYPES.includes(p.type));
+      if (checkable.length === 0) return;
+      const isUnchecked = checkable.some(p => {
+        if (!p.lastCheckedAt) return true;
+        const checkedDate = new Date(p.lastCheckedAt);
+        const isThisMonth = checkedDate.getMonth() === today.getMonth() && checkedDate.getFullYear() === today.getFullYear();
+        if (isThisMonth) return false;
+        const diffDays = (today.getTime() - checkedDate.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 31) return true;
+        if (today.getDate() > 15) return true;
+        return false;
+      });
+      if (isUnchecked && staff.storeId) {
+        if (!storeNamesMap.has(staff.storeId)) storeNamesMap.set(staff.storeId, new Set());
+        storeNamesMap.get(staff.storeId)!.add(formatStaffName(staffFullName(staff)));
       }
     });
-    return Array.from(alertStoreIds).map(id => stores.find(s => s.id === id)?.name).filter(Boolean) as string[];
+    return Array.from(storeNamesMap.entries())
+      .map(([id, names]) => ({ storeName: stores.find(s => s.id === id)?.name || '', names: Array.from(names) }))
+      .filter(d => !!d.storeName);
   };
 
-  const alertStores = getAlertStores();
+  const alertStoreDetails = getAlertStoreDetails();
 
   const toggleStore = (storeId: string) =>
     setExpandedStores(prev => prev.includes(storeId) ? prev.filter(id => id !== storeId) : [...prev, storeId]);
@@ -347,12 +390,14 @@ export const KeyPassManagement = () => {
         </div>
       </div>
 
-      {alertStores.length > 0 && (
+      {alertStoreDetails.length > 0 && (
         <div className="bg-danger/10 border-2 border-danger/30 text-danger p-4 rounded-2xl shadow-sm flex items-start sm:items-center gap-3">
           <AlertTriangle size={24} className="shrink-0 animate-pulse mt-0.5 sm:mt-0" />
           <div>
             <p className="font-black text-sm sm:text-base">以下の店舗で1ヶ月以上確認が行われていないか、今月15日を過ぎても当月分の確認が完了していません</p>
-            <p className="text-xs sm:text-sm font-bold mt-1 opacity-90">{alertStores.join('、')}</p>
+            <p className="text-xs sm:text-sm font-bold mt-1 opacity-90">
+              {alertStoreDetails.map(d => `${abbreviateStoreName(d.storeName)}(${d.names.join('・')})`).join('、')}
+            </p>
           </div>
         </div>
       )}
@@ -554,7 +599,7 @@ export const KeyPassManagement = () => {
                                 </span>
                               )}
                             </div>
-                            {!isBM && possessions.length > 1 && (
+                            {!isBM && possessions.filter(p => CHECKABLE_TYPES.includes(p.type)).length > 1 && (
                               <button
                                 onClick={() => checkAllForStaff(staff, 'physical')}
                                 className="text-[11px] font-black text-success bg-success/10 hover:bg-success/20 px-2.5 py-1.5 rounded-lg border border-success/20 flex items-center gap-1 whitespace-nowrap"
@@ -576,7 +621,7 @@ export const KeyPassManagement = () => {
                                   <span className="text-sm font-bold text-ink">
                                     {abbreviateStoreName(p.storeName)} <span className="text-xs text-ink-soft">({translateType(p.type)})</span>
                                   </span>
-                                  {p.lastCheckedAt && (
+                                  {CHECKABLE_TYPES.includes(p.type) && p.lastCheckedAt && (
                                     <span className="flex items-center gap-1">
                                       {isRecentlyChecked(p.lastCheckedAt) && (
                                         <span className="text-[10px] font-black text-white bg-danger px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">NEW</span>
@@ -587,21 +632,30 @@ export const KeyPassManagement = () => {
                                       </span>
                                     </span>
                                   )}
+                                  {CHECKABLE_TYPES.includes(p.type) && (p.photoStreak || 0) >= 2 && (
+                                    <span className="flex items-center gap-1 text-[11px] font-black text-white bg-danger px-1.5 py-0.5 rounded-md animate-pulse whitespace-nowrap">
+                                      <AlertTriangle size={11} /> 現物確認してください
+                                    </span>
+                                  )}
                                 </div>
                                 {!isBM && (
                                   <div className="flex gap-1.5 shrink-0">
-                                    <button
-                                      onClick={() => checkPossession(staff, i, 'photo')}
-                                      className="tap min-h-[40px] justify-center bg-qb-blue/10 text-qb-blue hover:bg-qb-blue/20 px-3 rounded-lg text-xs font-bold border border-qb-blue/20 flex items-center gap-1"
-                                    >
-                                      <Camera size={14} /> 写真
-                                    </button>
-                                    <button
-                                      onClick={() => checkPossession(staff, i, 'physical')}
-                                      className="tap min-h-[40px] justify-center bg-success/10 text-success hover:bg-success/20 px-3 rounded-lg text-xs font-bold border border-success/20 flex items-center gap-1"
-                                    >
-                                      <CheckCircle size={14} /> 現物
-                                    </button>
+                                    {CHECKABLE_TYPES.includes(p.type) && (
+                                      <>
+                                        <button
+                                          onClick={() => checkPossession(staff, i, 'photo')}
+                                          className="tap min-h-[40px] justify-center bg-qb-blue/10 text-qb-blue hover:bg-qb-blue/20 px-3 rounded-lg text-xs font-bold border border-qb-blue/20 flex items-center gap-1"
+                                        >
+                                          <Camera size={14} /> 写真
+                                        </button>
+                                        <button
+                                          onClick={() => checkPossession(staff, i, 'physical')}
+                                          className="tap min-h-[40px] justify-center bg-success/10 text-success hover:bg-success/20 px-3 rounded-lg text-xs font-bold border border-success/20 flex items-center gap-1"
+                                        >
+                                          <CheckCircle size={14} /> 現物
+                                        </button>
+                                      </>
+                                    )}
                                     <button
                                       onClick={() => deletePossession(staff, i)}
                                       aria-label="削除"

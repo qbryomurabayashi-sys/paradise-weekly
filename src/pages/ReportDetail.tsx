@@ -261,7 +261,10 @@ export const ReportDetail = () => {
     const givenStyle = activeRole === 'BM' ? 'bg-gradient-to-r from-qb-cyan to-qb-blue text-white border-transparent shadow-md'
                      : activeRole === 'AM' ? 'bg-gradient-to-r from-qb-blue to-qb-blue-dark text-white border-transparent shadow-md'
                      : 'bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white border-transparent shadow-md';
-    const idleStyle = 'bg-white text-qb-gray border-line hover:border-qb-cyan hover:text-qb-blue';
+    // 未選定でも「押せるボタン」だと分かるよう、色付き背景+枠線+影で明確なアフォーダンスを持たせる
+    const idleStyle = activeRole === 'BM' ? 'bg-qb-cyan/10 text-qb-blue border-qb-cyan/40 shadow-sm hover:bg-qb-cyan/20 hover:border-qb-cyan hover:shadow-md'
+                     : activeRole === 'AM' ? 'bg-qb-blue/10 text-qb-blue-dark border-qb-blue/40 shadow-sm hover:bg-qb-blue/20 hover:border-qb-blue hover:shadow-md'
+                     : 'bg-purple-50 text-purple-600 border-purple-300 shadow-sm hover:bg-purple-100 hover:border-purple-400 hover:shadow-md';
 
     return (
       <div className="pt-3 border-t border-line">

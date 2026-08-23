@@ -159,39 +159,44 @@ export const MainBoard = () => {
     return [...staffs, ...userStaffs];
   }, [staffs, users, stores]);
 
-  const keyPassAlertStores = React.useMemo(() => {
+  const keyPassAlertDetails = React.useMemo(() => {
     const today = new Date();
-    const alertStoreIds = new Set<string>();
+    const storeNamesMap = new Map<string, Set<string>>();
 
     mixedStaffs.forEach(staff => {
       const record = keyPassRecords.find(r => r.id === staff.id);
-      if (record && record.possessions && record.possessions.length > 0) {
-        const isUnchecked = record.possessions.some((p: any) => {
-           if (!p.lastCheckedAt) return true;
-           const checkedDate = new Date(p.lastCheckedAt);
-           
-           const isThisMonth = checkedDate.getMonth() === today.getMonth() && checkedDate.getFullYear() === today.getFullYear();
-           if (isThisMonth) return false;
+      // 写真・現物確認の対象は鍵・入館証のみ（金庫番号・ポスト番号は確認不要）
+      const checkable = (record?.possessions || []).filter((p: any) => p.type === 'key' || p.type === 'pass');
+      if (checkable.length === 0) return;
 
-           const msPerDay = 1000 * 60 * 60 * 24;
-           const diffDays = (today.getTime() - checkedDate.getTime()) / msPerDay;
+      const isUnchecked = checkable.some((p: any) => {
+         if (!p.lastCheckedAt) return true;
+         const checkedDate = new Date(p.lastCheckedAt);
 
-           // 1か月（約31日）以上更新されていない場合
-           if (diffDays >= 31) return true;
+         const isThisMonth = checkedDate.getMonth() === today.getMonth() && checkedDate.getFullYear() === today.getFullYear();
+         if (isThisMonth) return false;
 
-           // 15日を過ぎても当月分の確認がされていない場合
-           if (today.getDate() > 15) return true;
-           
-           return false;
-        });
+         const msPerDay = 1000 * 60 * 60 * 24;
+         const diffDays = (today.getTime() - checkedDate.getTime()) / msPerDay;
 
-        if (isUnchecked && staff.storeId) {
-          alertStoreIds.add(staff.storeId);
-        }
+         // 1か月（約31日）以上更新されていない場合
+         if (diffDays >= 31) return true;
+
+         // 15日を過ぎても当月分の確認がされていない場合
+         if (today.getDate() > 15) return true;
+
+         return false;
+      });
+
+      if (isUnchecked && staff.storeId) {
+        if (!storeNamesMap.has(staff.storeId)) storeNamesMap.set(staff.storeId, new Set());
+        storeNamesMap.get(staff.storeId)!.add(formatStaffName(`${staff.lastName} ${staff.firstName}`));
       }
     });
 
-    return Array.from(alertStoreIds).map(id => stores.find(s => s.id === id)?.name).filter((name): name is string => !!name);
+    return Array.from(storeNamesMap.entries())
+      .map(([id, names]) => ({ storeName: stores.find(s => s.id === id)?.name || '', names: Array.from(names) }))
+      .filter(d => !!d.storeName);
   }, [keyPassRecords, mixedStaffs, stores]);
 
   const leavePlanAlertStores = React.useMemo(() => {
@@ -227,10 +232,10 @@ export const MainBoard = () => {
     if (activeRole === '店長') {
       const myStore = stores.find(s => s.name === user?.storeName);
       if (!myStore) return [];
-      return keyPassAlertStores.includes(myStore.name) ? [myStore.name] : [];
+      return keyPassAlertDetails.filter(d => d.storeName === myStore.name);
     }
-    return keyPassAlertStores;
-  }, [keyPassAlertStores, activeRole, stores, user?.storeName]);
+    return keyPassAlertDetails;
+  }, [keyPassAlertDetails, activeRole, stores, user?.storeName]);
 
   const filteredLeavePlanAlertStores = React.useMemo(() => {
     if (activeRole === '店長') {
@@ -560,7 +565,7 @@ export const MainBoard = () => {
                 <span className="p-1 bg-red-100 text-red-600 rounded-md shrink-0 text-base">🔑</span>
                 <div className="min-w-0 flex-1">
                   <span className="font-extrabold text-red-950 block sm:inline-block sm:mr-1">【鍵・入証未確認】</span>
-                  <span className="font-bold opacity-95 text-gray-700 truncate block sm:inline">{filteredKeyPassAlertStores.map(abbreviateStoreName).join('、')}</span>
+                  <span className="font-bold opacity-95 text-gray-700 truncate block sm:inline">{filteredKeyPassAlertStores.map(d => `${abbreviateStoreName(d.storeName)}(${d.names.join('・')})`).join('、')}</span>
                 </div>
               </div>
               <button

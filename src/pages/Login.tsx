@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
-import { Scissors, ArrowRight, Loader, AlertCircle } from 'lucide-react';
+import { Scissors, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
-import { runDatabaseSeed } from '../lib/seed';
 
 export const Login = () => {
   const [isSplash, setIsSplash] = useState(true);
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedProgress, setSeedProgress] = useState('');
   const [error, setError] = useState('');
-  const [seedConfirm, setSeedConfirm] = useState(false);
   const { login } = useAuthStore();
 
   useEffect(() => {
@@ -24,30 +20,13 @@ export const Login = () => {
     e?.preventDefault();
     setError('');
     if (!id.trim() || !password.trim()) {
-      setError('IDとパスワードを入力してください。（初期ID: bm / am1 / s1 / s2、PW: password）');
+      setError('IDとパスワードを入力してください。');
       return;
     }
     try {
       await login(id, password);
     } catch (err: any) {
-      setError(`ログインに失敗しました: ${err.message}。初回は下の「初期データ作成」を実行してください。`);
-    }
-  };
-
-  const runSeed = async () => {
-    setSeedConfirm(false);
-    setIsSeeding(true);
-    setError('');
-    try {
-      await runDatabaseSeed(setSeedProgress);
-      setId('bm');
-      setPassword('password');
-      setError('');
-      setSeedProgress('初期化に成功しました。ID: bm / PW: password でログインできます。');
-    } catch (err: any) {
-      setError(`初期化に失敗しました: ${err.message || err}`);
-    } finally {
-      setIsSeeding(false);
+      setError(`ログインに失敗しました: ${err.message}`);
     }
   };
 
@@ -132,37 +111,6 @@ export const Login = () => {
                 </button>
               </form>
 
-              {/* Database Initialization Action */}
-              <div className="pt-4 border-t border-line flex flex-col items-center gap-2">
-                <p className="text-xs text-ink-soft font-bold">新規データベース接続・初回セットアップ</p>
-                {isSeeding ? (
-                  <div className="text-[13px] text-qb-blue font-bold bg-qb-cyan/10 px-4 py-3 rounded-xl border border-qb-cyan/20 w-full text-center flex items-center justify-center gap-2">
-                    <Loader size={14} className="animate-spin" /> {seedProgress || '初期化中…'}
-                  </div>
-                ) : seedConfirm ? (
-                  <div className="w-full space-y-2 bg-white/60 border border-line rounded-xl p-3">
-                    <p className="text-[13px] font-bold text-ink leading-relaxed">
-                      初期デモデータとデモ用アカウント（bm / am1 / s1 / s2）を作成します。実行しますか？
-                    </p>
-                    <div className="flex gap-2">
-                      <button onClick={runSeed} type="button" className="flex-1 min-h-[44px] rounded-xl bg-qb-blue text-white text-[13px] font-bold active:scale-95 transition-transform">
-                        実行する
-                      </button>
-                      <button onClick={() => setSeedConfirm(false)} type="button" className="flex-1 min-h-[44px] rounded-xl bg-white text-ink-soft border border-line text-[13px] font-bold active:scale-95 transition-transform">
-                        やめる
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setSeedConfirm(true)}
-                    type="button"
-                    className="text-[13px] bg-white text-ink-soft hover:text-qb-blue font-bold min-h-[44px] px-4 rounded-xl border border-line hover:border-qb-cyan active:scale-95 transition-all"
-                  >
-                    初期デモデータを作成する
-                  </button>
-                )}
-              </div>
             </GlassCard>
           </motion.div>
         )}
