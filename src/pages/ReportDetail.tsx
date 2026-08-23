@@ -260,11 +260,12 @@ export const ReportDetail = () => {
     const kptCount = kptRc?.count || 0;
     const kptNames = (kptRc?.userNames || []).map((n: string) => formatStaffName(n)).join('、');
 
+    // BEST KPTだけは「特別枠」と分かるよう、他4リアクションとは別にゴールド系の縁取り・グラデを常時まとわせる
     const kptColors = activeRole === 'BM'
-      ? { icon: 'text-qb-blue', bg: 'bg-qb-cyan/15', mineBorder: 'border-qb-cyan', mineBg: 'bg-qb-cyan/10' }
+      ? { given: 'bg-gradient-to-br from-qb-cyan to-qb-blue' }
       : activeRole === 'AM'
-      ? { icon: 'text-qb-blue-dark', bg: 'bg-qb-blue/15', mineBorder: 'border-qb-blue', mineBg: 'bg-qb-blue/10' }
-      : { icon: 'text-purple-600', bg: 'bg-purple-100', mineBorder: 'border-purple-400', mineBg: 'bg-purple-50' };
+      ? { given: 'bg-gradient-to-br from-qb-blue to-qb-blue-dark' }
+      : { given: 'bg-gradient-to-br from-purple-500 to-fuchsia-500' };
 
     return (
       <div className={`grid gap-2 pt-3 border-t border-line ${showKpt ? 'grid-cols-5' : 'grid-cols-4'}`}>
@@ -281,18 +282,25 @@ export const ReportDetail = () => {
                 });
               }
             }}
-            className={`tap flex flex-col items-center justify-start gap-1 rounded-2xl py-2.5 px-1 min-h-[86px] border transition-all active:scale-95 ${kptMine ? `${kptColors.mineBorder} ${kptColors.mineBg}` : 'border-line bg-white hover:border-qb-cyan/40'}`}
+            className={`relative tap flex flex-col items-center justify-start gap-1 rounded-2xl py-2.5 px-1 min-h-[86px] border-2 transition-all active:scale-95 ${
+              kptMine
+                ? `${kptColors.given} border-transparent text-white shadow-lg`
+                : 'border-amber-300 bg-gradient-to-b from-amber-50 to-white shadow-sm hover:border-amber-400 hover:shadow-md'
+            }`}
           >
+            <span className="absolute -top-1.5 -right-1.5 grid place-items-center h-5 w-5 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-white shadow-sm">
+              <Sparkles size={11} />
+            </span>
             <motion.span
               animate={{ rotate: kptMine ? [0, -12, 12, -8, 0] : 0 }}
               transition={{ duration: 0.5 }}
-              className={`grid place-items-center h-9 w-9 rounded-xl ${kptColors.bg} ${kptColors.icon}`}
+              className={`grid place-items-center h-9 w-9 rounded-xl ${kptMine ? 'bg-white/20 text-white' : 'bg-gradient-to-br from-amber-200 to-amber-400 text-amber-700'}`}
             >
               <Trophy size={18} fill={kptMine ? 'currentColor' : 'none'} />
             </motion.span>
-            <span className="text-xs font-black text-ink leading-none">BEST</span>
-            <span className="text-xs font-black text-ink-soft tabular leading-none">{kptCount}</span>
-            {kptNames && <span className="text-xs text-qb-gray leading-tight text-center line-clamp-1 w-full px-0.5">{kptNames}</span>}
+            <span className={`text-xs font-black leading-none ${kptMine ? 'text-white' : 'text-amber-700'}`}>BEST</span>
+            <span className={`text-xs font-black tabular leading-none ${kptMine ? 'text-white/90' : 'text-ink-soft'}`}>{kptCount}</span>
+            {kptNames && <span className={`text-xs leading-tight text-center line-clamp-1 w-full px-0.5 ${kptMine ? 'text-white/80' : 'text-qb-gray'}`}>{kptNames}</span>}
           </button>
         )}
         {REACTIONS.map((r) => {
