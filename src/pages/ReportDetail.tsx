@@ -250,82 +250,84 @@ export const ReportDetail = () => {
     </>
   );
 
-  // BEST KPT 選定ボタン（整列・コンパクト）
-  const renderBestKpt = () => {
-    if (!(activeRole === 'BM' || activeRole === 'AM' || activeRole === '店長')) return null;
+  // BEST KPT + リアクション4種を横並び5列のタイルに統一（見た目・押下感を統一）
+  const renderReactions = () => {
+    const showKpt = activeRole === 'BM' || activeRole === 'AM' || activeRole === '店長';
     const kptType = activeRole === 'BM' ? 'best_kpt' : activeRole === 'AM' ? 'best_kpt_am' : 'best_kpt_sm';
     const kptLabel = activeRole === 'BM' ? 'BM BEST KPT' : activeRole === 'AM' ? 'AM BEST KPT' : '店長 BEST KPT';
-    const hasGiven = report.reactions?.find((r: any) => r.type === kptType)?.userIds?.includes(user?.uid) || false;
-    const kptCount = report.reactions?.find((r: any) => r.type === kptType)?.count || 0;
+    const kptRc = report.reactions?.find((r: any) => r.type === kptType);
+    const kptMine = kptRc?.userIds?.includes(currentUid) || false;
+    const kptCount = kptRc?.count || 0;
+    const kptNames = (kptRc?.userNames || []).map((n: string) => formatStaffName(n)).join('、');
 
-    const givenStyle = activeRole === 'BM' ? 'bg-gradient-to-r from-qb-cyan to-qb-blue text-white border-transparent shadow-md'
-                     : activeRole === 'AM' ? 'bg-gradient-to-r from-qb-blue to-qb-blue-dark text-white border-transparent shadow-md'
-                     : 'bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white border-transparent shadow-md';
-    // 未選定は「押せるアウトラインボタン」＝白背景+濃い枠線+影。塗り背景は選定済み(givenStyle)だけの見た目にして選定済みと混同しないようにする
-    const idleStyle = activeRole === 'BM' ? 'bg-white text-qb-blue border-2 border-qb-cyan/60 shadow-md hover:bg-qb-cyan/5 hover:border-qb-cyan hover:shadow-lg'
-                     : activeRole === 'AM' ? 'bg-white text-qb-blue-dark border-2 border-qb-blue/60 shadow-md hover:bg-qb-blue/5 hover:border-qb-blue hover:shadow-lg'
-                     : 'bg-white text-purple-600 border-2 border-purple-400 shadow-md hover:bg-purple-50 hover:border-purple-500 hover:shadow-lg';
+    const kptColors = activeRole === 'BM'
+      ? { icon: 'text-qb-blue', bg: 'bg-qb-cyan/15', mineBorder: 'border-qb-cyan', mineBg: 'bg-qb-cyan/10' }
+      : activeRole === 'AM'
+      ? { icon: 'text-qb-blue-dark', bg: 'bg-qb-blue/15', mineBorder: 'border-qb-blue', mineBg: 'bg-qb-blue/10' }
+      : { icon: 'text-purple-600', bg: 'bg-purple-100', mineBorder: 'border-purple-400', mineBg: 'bg-purple-50' };
 
     return (
-      <div className="pt-3 border-t border-line">
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            if (user) {
-              useReportStore.getState().addReaction(report.id, kptType, {
-                uid: user.uid || (user as any).id,
-                name: user.name,
-                role: user.role
-              });
-            }
-          }}
-          className={`tap w-full rounded-2xl px-4 min-h-[52px] flex items-center justify-center gap-2 font-black border-2 transition-all active:scale-95 ${hasGiven ? givenStyle : idleStyle}`}
-        >
-          <motion.span animate={{ rotate: hasGiven ? [0, -12, 12, -8, 0] : 0 }} transition={{ duration: 0.5 }}>
-            <Trophy size={22} fill={hasGiven ? 'currentColor' : 'none'} />
-          </motion.span>
-          <span className="text-sm">{hasGiven ? `${kptLabel} 選定済` : `${kptLabel} に選定`}</span>
-          {kptCount > 0 && <span className="text-sm tabular">({kptCount})</span>}
-        </button>
-      </div>
-    );
-  };
-
-  // リアクション4種（整列グリッド）
-  const renderReactions = () => (
-    <div className="grid grid-cols-4 gap-2 pt-3 border-t border-line">
-      {REACTIONS.map((r) => {
-        const rc = report.reactions?.find(react => react.type === r.type);
-        const count = rc?.count || 0;
-        const mine = rc?.userIds?.includes(user?.uid) || false;
-        const names = (rc?.userNames || []).map(n => formatStaffName(n)).join('、');
-        return (
+      <div className={`grid gap-2 pt-3 border-t border-line ${showKpt ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        {showKpt && (
           <button
-            key={r.type}
-            title={names || undefined}
+            title={kptLabel}
             onClick={(e) => {
               e.preventDefault();
               if (user) {
-                useReportStore.getState().addReaction(report.id, r.type, {
+                useReportStore.getState().addReaction(report.id, kptType, {
                   uid: user.uid || (user as any).id,
                   name: user.name,
                   role: user.role
                 });
               }
             }}
-            className={`tap flex flex-col items-center justify-start gap-1 rounded-2xl py-2.5 px-1 min-h-[86px] border transition-all active:scale-95 ${mine ? 'border-qb-cyan bg-qb-cyan/10' : 'border-line bg-white hover:border-qb-cyan/40'}`}
+            className={`tap flex flex-col items-center justify-start gap-1 rounded-2xl py-2.5 px-1 min-h-[86px] border transition-all active:scale-95 ${kptMine ? `${kptColors.mineBorder} ${kptColors.mineBg}` : 'border-line bg-white hover:border-qb-cyan/40'}`}
           >
-            <span className={`grid place-items-center h-9 w-9 rounded-xl ${r.bg} ${r.color}`}>
-              <r.icon size={18} />
-            </span>
-            <span className="text-xs font-black text-ink leading-none">{r.label}</span>
-            <span className="text-xs font-black text-ink-soft tabular leading-none">{count}</span>
-            {names && <span className="text-xs text-qb-gray leading-tight text-center line-clamp-1 w-full px-0.5">{names}</span>}
+            <motion.span
+              animate={{ rotate: kptMine ? [0, -12, 12, -8, 0] : 0 }}
+              transition={{ duration: 0.5 }}
+              className={`grid place-items-center h-9 w-9 rounded-xl ${kptColors.bg} ${kptColors.icon}`}
+            >
+              <Trophy size={18} fill={kptMine ? 'currentColor' : 'none'} />
+            </motion.span>
+            <span className="text-xs font-black text-ink leading-none">BEST</span>
+            <span className="text-xs font-black text-ink-soft tabular leading-none">{kptCount}</span>
+            {kptNames && <span className="text-xs text-qb-gray leading-tight text-center line-clamp-1 w-full px-0.5">{kptNames}</span>}
           </button>
-        );
-      })}
-    </div>
-  );
+        )}
+        {REACTIONS.map((r) => {
+          const rc = report.reactions?.find(react => react.type === r.type);
+          const count = rc?.count || 0;
+          const mine = rc?.userIds?.includes(currentUid) || false;
+          const names = (rc?.userNames || []).map(n => formatStaffName(n)).join('、');
+          return (
+            <button
+              key={r.type}
+              title={names || undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                if (user) {
+                  useReportStore.getState().addReaction(report.id, r.type, {
+                    uid: user.uid || (user as any).id,
+                    name: user.name,
+                    role: user.role
+                  });
+                }
+              }}
+              className={`tap flex flex-col items-center justify-start gap-1 rounded-2xl py-2.5 px-1 min-h-[86px] border transition-all active:scale-95 ${mine ? 'border-qb-cyan bg-qb-cyan/10' : 'border-line bg-white hover:border-qb-cyan/40'}`}
+            >
+              <span className={`grid place-items-center h-9 w-9 rounded-xl ${r.bg} ${r.color}`}>
+                <r.icon size={18} />
+              </span>
+              <span className="text-xs font-black text-ink leading-none">{r.label}</span>
+              <span className="text-xs font-black text-ink-soft tabular leading-none">{count}</span>
+              {names && <span className="text-xs text-qb-gray leading-tight text-center line-clamp-1 w-full px-0.5">{names}</span>}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   // レポート本文カード（見出し＋KEEP/Problem/Try＋BEST KPT＋リアクション）
   const renderReportCard = () => (
@@ -398,8 +400,7 @@ export const ReportDetail = () => {
         </section>
       </div>
 
-      {/* BEST KPT + リアクション */}
-      {renderBestKpt()}
+      {/* BEST KPT + リアクション（横並び5列） */}
       {renderReactions()}
     </div>
   );
@@ -408,7 +409,7 @@ export const ReportDetail = () => {
   const renderComment = (c: any, idx: number) => {
     const likeRc = c.reactions?.find((r: any) => r.type === 'like');
     const likeCount = likeRc?.userIds?.length || 0;
-    const mine = likeRc?.userIds?.includes(user?.uid) || false;
+    const mine = likeRc?.userIds?.includes(currentUid) || false;
     const names = (likeRc?.userNames || []).map((n: string) => formatStaffName(n)).join('、');
     return (
       <motion.div
