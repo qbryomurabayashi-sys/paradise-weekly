@@ -28,6 +28,12 @@ export interface Report {
   try_when: string;
   try_what: string;
   try_why: string;
+  mvpStaffId?: string;
+  mvpStaffName?: string;
+  mvpDetail?: string;
+  concernStaffId?: string;
+  concernStaffName?: string;
+  concernDetail?: string;
   reactions: Reaction[];
   commentCount: number;
   readBy?: string[];

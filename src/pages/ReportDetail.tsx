@@ -408,6 +408,34 @@ export const ReportDetail = () => {
         </section>
       </div>
 
+      {/* MVP・不安スタッフ（任意項目・名前/詳細のどちらかがあれば表示。両方空なら非表示） */}
+      {((report.mvpStaffName || report.mvpDetail) || (report.concernStaffName || report.concernDetail)) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {(report.mvpStaffName || report.mvpDetail) && (
+            <section>
+              <h3 className="text-xs font-black tracking-wider flex items-center gap-2 mb-1.5 text-amber-600">
+                <span className="w-1 h-4 rounded-full bg-amber-400" /> 今週のMVP
+              </h3>
+              <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 space-y-1.5 h-full">
+                {report.mvpStaffName && <p className="text-sm font-black text-ink">{formatStaffName(report.mvpStaffName)}</p>}
+                {report.mvpDetail && <p className="text-sm text-ink leading-relaxed font-medium whitespace-pre-wrap">{report.mvpDetail}</p>}
+              </div>
+            </section>
+          )}
+          {(report.concernStaffName || report.concernDetail) && (
+            <section>
+              <h3 className="text-xs font-black tracking-wider flex items-center gap-2 mb-1.5 text-qb-blue">
+                <span className="w-1 h-4 rounded-full bg-qb-blue" /> 不安スタッフ
+              </h3>
+              <div className="bg-qb-blue/5 p-3.5 rounded-2xl border border-qb-blue/10 space-y-1.5 h-full">
+                {report.concernStaffName && <p className="text-sm font-black text-ink">{formatStaffName(report.concernStaffName)}</p>}
+                {report.concernDetail && <p className="text-sm text-ink leading-relaxed font-medium whitespace-pre-wrap">{report.concernDetail}</p>}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
       {/* BEST KPT + リアクション（横並び5列） */}
       {renderReactions()}
     </div>

@@ -7,9 +7,11 @@ import { auth, db } from '../lib/firebase';
 import { doc, getDoc, collection, addDoc, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { useReportStore, Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useShiftStore } from '../store/useShiftStore';
 import { Send, Check, Info, Plus, X, Calendar as CalendarIcon, History, Loader2, RotateCcw, Copy, AlertTriangle, ChevronLeft, ChevronDown, Save, Clock } from 'lucide-react';
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
 import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
+import { formatStaffName } from '../lib/formatUtils';
 
 export const PostReport = () => {
   const { id } = useParams();
@@ -28,6 +30,12 @@ export const PostReport = () => {
     try_when: '',
     try_what: '',
     try_why: '',
+    mvpStaffId: '',
+    mvpStaffName: '',
+    mvpDetail: '',
+    concernStaffId: '',
+    concernStaffName: '',
+    concernDetail: '',
     scheduledFor: '',
     tasks: [] // Array of { title, date, assignees, description }
   });
@@ -37,6 +45,7 @@ export const PostReport = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { addReport, updateReport } = useReportStore();
+  const { stores, staffs, initStores, initStaffs } = useShiftStore();
 
   // インライン通知（ネイティブalert置換）
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -57,6 +66,45 @@ export const PostReport = () => {
   const updateData = (field: string, value: any) => {
     setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
+
+  // MVP・不安スタッフのプルダウン用にスタッフ一覧をロード（自店舗のみに絞り込み）
+  useEffect(() => {
+    initStores();
+    initStaffs();
+  }, []);
+
+  // formData.storeName から店舗を特定し、そのスタッフだけに絞る。
+  // 店舗が見つからない場合（自由記述等）はフォールバックでスタッフ全体を使う。
+  const matchedStore = stores.find(s => s.name === formData.storeName);
+  const staffOptions = matchedStore
+    ? staffs.filter(s => s.storeId === matchedStore.id)
+    : staffs;
+
+  // MVP/不安スタッフのプルダウン選択時に staffId と staffName（生の姓名）を同時にセットする
+  const handleStaffSelect = (kind: 'mvp' | 'concern', staffId: string) => {
+    const staff = staffOptions.find(s => s.id === staffId);
+    const rawName = staff ? `${staff.lastName} ${staff.firstName}` : '';
+    setFormData((prev: any) => ({
+      ...prev,
+      [`${kind}StaffId`]: staffId,
+      [`${kind}StaffName`]: rawName
+    }));
+  };
+
+  // 店舗名を後から書き換えて絞り込み対象(staffOptions)が変わった場合、
+  // 選択済みのMVP/不安スタッフがその新しい選択肢に無ければ黙って古い値を保存してしまわないよう自動クリアする
+  useEffect(() => {
+    setFormData((prev: any) => {
+      let next = prev;
+      if (prev.mvpStaffId && !staffOptions.some(s => s.id === prev.mvpStaffId)) {
+        next = { ...next, mvpStaffId: '', mvpStaffName: '' };
+      }
+      if (prev.concernStaffId && !staffOptions.some(s => s.id === prev.concernStaffId)) {
+        next = { ...next, concernStaffId: '', concernStaffName: '' };
+      }
+      return next;
+    });
+  }, [staffOptions]);
 
   const handleAddTask = () => {
     if (!newTaskTitle || !newTaskDate) return;
@@ -159,6 +207,12 @@ export const PostReport = () => {
       try_when: previousReport.try_when || '',
       try_what: previousReport.try_what || '',
       try_why: previousReport.try_why || '',
+      mvpStaffId: previousReport.mvpStaffId || '',
+      mvpStaffName: previousReport.mvpStaffName || '',
+      mvpDetail: previousReport.mvpDetail || '',
+      concernStaffId: previousReport.concernStaffId || '',
+      concernStaffName: previousReport.concernStaffName || '',
+      concernDetail: previousReport.concernDetail || '',
       tasks: previousReport.tasks || []
     }));
     showToast('前回の報告内容をフォームに読み込みました。内容を確認して送信してください。', 'success');
@@ -190,6 +244,12 @@ export const PostReport = () => {
         try_when: previousReport.try_when || '',
         try_what: previousReport.try_what || '',
         try_why: previousReport.try_why || '',
+        mvpStaffId: previousReport.mvpStaffId || '',
+        mvpStaffName: previousReport.mvpStaffName || '',
+        mvpDetail: previousReport.mvpDetail || '',
+        concernStaffId: previousReport.concernStaffId || '',
+        concernStaffName: previousReport.concernStaffName || '',
+        concernDetail: previousReport.concernDetail || '',
         tasks: previousReport.tasks || [],
         status: 'published' as const
       };
@@ -695,6 +755,66 @@ export const PostReport = () => {
                 className={inputCls}
                 value={formData.try_why}
                 onChange={(e) => updateData('try_why', e.target.value)}
+              />
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* MVP・不安スタッフ（任意） */}
+        <GlassCard className="p-5 shadow-lg">
+          <h2 className="text-lg font-black text-ink flex items-center gap-2 mb-1">
+            <span className="grid place-items-center h-6 w-6 rounded-lg bg-qb-cyan/15 text-qb-cyan text-sm">🏆</span>
+            今週のMVP・フォロー（任意）
+          </h2>
+          <p className="text-xs font-bold text-ink-soft mb-3">頑張っていたスタッフ・フォローが必要そうなスタッフがいれば入力してください。</p>
+          <div className="space-y-3">
+            <div>
+              <label className={labelCls}>今週のMVPスタッフ</label>
+              <select
+                className={inputCls}
+                value={formData.mvpStaffId || ''}
+                onChange={(e) => handleStaffSelect('mvp', e.target.value)}
+              >
+                <option value="">選択しない</option>
+                {staffOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {formatStaffName(`${s.lastName} ${s.firstName}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>何をしたのか（任意）</label>
+              <SmoothTextArea
+                placeholder="MVPスタッフの取り組み・エピソードなど…"
+                className={`${taCls} h-20`}
+                value={formData.mvpDetail}
+                onValueChange={(val) => updateData('mvpDetail', val)}
+              />
+            </div>
+
+            <div className="border-t border-line pt-3">
+              <label className={labelCls}>不安スタッフ（フォローが必要そうなスタッフ）</label>
+              <select
+                className={inputCls}
+                value={formData.concernStaffId || ''}
+                onChange={(e) => handleStaffSelect('concern', e.target.value)}
+              >
+                <option value="">選択しない</option>
+                {staffOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {formatStaffName(`${s.lastName} ${s.firstName}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>何をしていった方がいいのか（対応方針・任意）</label>
+              <SmoothTextArea
+                placeholder="フォローの方向性・対応方針など…"
+                className={`${taCls} h-20`}
+                value={formData.concernDetail}
+                onValueChange={(val) => updateData('concernDetail', val)}
               />
             </div>
           </div>
