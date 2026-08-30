@@ -839,6 +839,36 @@ export const PostReport = () => {
             </div>
           </div>
         </GlassCard>
+
+        {/* 予約送信 */}
+        <GlassCard className="p-5 shadow-lg">
+          <h2 className="text-base font-black text-ink flex items-center gap-2 mb-1">
+            <Clock size={18} className="text-qb-blue" /> 予約送信（任意）
+          </h2>
+          <p className="text-xs font-bold text-ink-soft mb-3">日時を指定すると、その時刻まで他の人には表示されず、記入者だけが確認できます（後から編集可）。</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="datetime-local"
+              value={formData.scheduledFor || ''}
+              onChange={(e) => updateData('scheduledFor', e.target.value)}
+              className={inputCls}
+            />
+            {formData.scheduledFor && (
+              <button
+                onClick={() => updateData('scheduledFor', '')}
+                className="tap grid place-items-center text-qb-gray hover:text-danger shrink-0"
+                title="予約を解除"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
+          {isScheduled && (
+            <p className="text-xs font-black text-qb-blue mt-2 flex items-center gap-1">
+              <Info size={12} /> {new Date(formData.scheduledFor).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} に公開予約されます
+            </p>
+          )}
+        </GlassCard>
         </>)}
 
         {step === 1 && (<>
@@ -918,50 +948,32 @@ export const PostReport = () => {
             )}
           </GlassCard>
         )}
-
-        {/* 予約送信 */}
-        <GlassCard className="p-5 shadow-lg">
-          <h2 className="text-base font-black text-ink flex items-center gap-2 mb-1">
-            <Clock size={18} className="text-qb-blue" /> 予約送信（任意）
-          </h2>
-          <p className="text-xs font-bold text-ink-soft mb-3">日時を指定すると、その時刻まで他の人には表示されず、記入者だけが確認できます（後から編集可）。</p>
-          <div className="flex items-center gap-2">
-            <input
-              type="datetime-local"
-              value={formData.scheduledFor || ''}
-              onChange={(e) => updateData('scheduledFor', e.target.value)}
-              className={inputCls}
-            />
-            {formData.scheduledFor && (
-              <button
-                onClick={() => updateData('scheduledFor', '')}
-                className="tap grid place-items-center text-qb-gray hover:text-danger shrink-0"
-                title="予約を解除"
-              >
-                <X size={18} />
-              </button>
-            )}
-          </div>
-          {isScheduled && (
-            <p className="text-xs font-black text-qb-blue mt-2 flex items-center gap-1">
-              <Info size={12} /> {new Date(formData.scheduledFor).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} に公開予約されます
-            </p>
-          )}
-        </GlassCard>
         </>)}
       </div>
 
       {/* 固定アクションバー：一時保存 / 次へ・送信・予約送信 */}
       <div className="fixed bottom-0 left-0 right-0 z-[60] bg-white/95 backdrop-blur-xl border-t border-line shadow-[0_-6px_24px_rgba(0,0,75,0.08)]">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          {step === 1 && (!isEditMode || formData.status === 'draft') && (
-            <button
-              onClick={handleSaveDraft}
-              disabled={isSubmitting}
-              className="tap flex-1 rounded-2xl bg-canvas text-ink font-black border border-line active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <Save size={18} /> 一時保存
-            </button>
+          {(!isEditMode || formData.status === 'draft') && (
+            step === 1 ? (
+              <button
+                onClick={handleSaveDraft}
+                disabled={isSubmitting}
+                className="tap flex-1 rounded-2xl bg-canvas text-ink font-black border border-line active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Save size={18} /> 一時保存
+              </button>
+            ) : (
+              <button
+                onClick={handleSaveDraft}
+                disabled={isSubmitting}
+                aria-label="一時保存"
+                title="一時保存"
+                className="tap w-12 h-12 shrink-0 rounded-2xl bg-canvas text-ink border border-line active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+              >
+                <Save size={18} />
+              </button>
+            )
           )}
           {step === 1 && (
             <button
@@ -978,9 +990,11 @@ export const PostReport = () => {
             <>
               <button
                 onClick={() => setStep(1)}
-                className="tap rounded-2xl px-5 bg-canvas text-ink font-black border border-line active:scale-95 transition-all flex items-center justify-center gap-2"
+                aria-label="1ページ目に戻る"
+                title="1ページ目に戻る"
+                className="tap w-12 h-12 shrink-0 rounded-2xl bg-canvas text-ink border border-line active:scale-95 transition-all flex items-center justify-center"
               >
-                <ChevronLeft size={18} /> 戻る
+                <ChevronLeft size={18} />
               </button>
               <button
                 onClick={handleSubmit}
