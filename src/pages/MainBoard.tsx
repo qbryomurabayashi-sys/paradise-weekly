@@ -228,23 +228,41 @@ export const MainBoard = () => {
     return id;
   }
 
+  // 店長の自店舗を特定するヘルパー。user.storeName と stores の name の表記ゆれ
+  // （前後の空白・正式名称/略称の食い違い）を吸収するため、まず trim 一致、
+  // ダメなら略称同一性でフォールバック一致させる。
+  //
+  // 【注意】abbreviateStoreName（src/lib/formatUtils.ts）によるフォールバック一致は、
+  // 現状の11店舗では「サミット」「ヨークフーズ」「コースカ」等の汎用キーワードが
+  // それぞれ1店舗にしか対応していないため安全に機能している。しかし将来店舗が追加され、
+  // これらと同じ汎用キーワードを含む別の店舗が増えた場合、stores.find() が意図しない
+  // 店舗にマッチしてしまうリスクがある。店舗追加時は abbreviateStoreName の判定分岐と
+  // 併せて見直すこと。
+  const findMyStore = React.useCallback(() => {
+    const myStoreName = user?.storeName?.trim();
+    if (!myStoreName) return undefined;
+    return stores.find(s =>
+      s.name.trim() === myStoreName || abbreviateStoreName(s.name) === abbreviateStoreName(myStoreName)
+    );
+  }, [stores, user?.storeName]);
+
   const filteredKeyPassAlertStores = React.useMemo(() => {
     if (activeRole === '店長') {
-      const myStore = stores.find(s => s.name === user?.storeName);
+      const myStore = findMyStore();
       if (!myStore) return [];
       return keyPassAlertDetails.filter(d => d.storeName === myStore.name);
     }
     return keyPassAlertDetails;
-  }, [keyPassAlertDetails, activeRole, stores, user?.storeName]);
+  }, [keyPassAlertDetails, activeRole, findMyStore]);
 
   const filteredLeavePlanAlertStores = React.useMemo(() => {
     if (activeRole === '店長') {
-      const myStore = stores.find(s => s.name === user?.storeName);
+      const myStore = findMyStore();
       if (!myStore) return [];
       return leavePlanAlertStores.includes(myStore.name) ? [myStore.name] : [];
     }
     return leavePlanAlertStores;
-  }, [leavePlanAlertStores, activeRole, stores, user?.storeName]);
+  }, [leavePlanAlertStores, activeRole, findMyStore]);
 
   // ランキング計算
   const { topTurnover, topGoogle } = React.useMemo(() => {
@@ -283,12 +301,11 @@ export const MainBoard = () => {
     const today = new Date();
     
     // ユーザーの権限に応じて表示するスタッフをフィルタリング
+    // 店長は自店舗のみに絞る。AM・BMは既存仕様どおり全店舗分を見られる（絞り込みなし）。
     let visibleStores = stores;
-    if (activeRole === '店長' && user?.storeName) {
-      visibleStores = stores.filter(s => s.name === user.storeName);
-    } else if (activeRole === 'AM') {
-      const allowedStores = ['錦糸町パルコ', '亀戸', 'アトレ新浦安', 'カメイドクロック', '市川', '津田沼'];
-      visibleStores = stores.filter(s => allowedStores.includes(s.name));
+    if (activeRole === '店長') {
+      const myStore = findMyStore();
+      visibleStores = myStore ? [myStore] : [];
     }
     const storeIds = visibleStores.map(s => s.id);
 
