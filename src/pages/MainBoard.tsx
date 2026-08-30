@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { auth, db } from '../lib/firebase';
-import { collection, onSnapshot, query, where, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import Markdown from 'react-markdown';
-import { useReportStore } from '../store/useReportStore';
+import { useReportStore, getTimestampMillis } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp, FileSpreadsheet, Loader2, AlertTriangle, Info } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { useShiftStore } from '../store/useShiftStore';
 import { useStoreMetricsStore } from '../store/useStoreMetricsStore';
@@ -18,6 +18,7 @@ import { ShiftShortagesAccordion } from '../components/ui/ShiftShortagesAccordio
 import { RatingStars } from '../components/ui/Indicators';
 import { displayRole, formatStaffName, abbreviateStoreName } from '../lib/formatUtils';
 import { isPubliclyVisibleReport } from '../lib/reportPermissions';
+import { getFiscalWeek } from '../lib/dateUtils';
 
 let _globalTasksUnsub: any = null;
 let _cachedTasks: any[] = [];
@@ -39,6 +40,15 @@ export const MainBoard = () => {
   const [calendarTasks, setCalendarTasks] = useState<any[]>([]);
   const [isInterviewAccordionOpen, setIsInterviewAccordionOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Excel出力（AM・店長の週次報告）用のインライン通知トースト・進行中フラグ
+  const [exportToast, setExportToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
+  useEffect(() => {
+    if (!exportToast) return;
+    const t = setTimeout(() => setExportToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [exportToast]);
+  const [isExporting, setIsExporting] = useState(false);
 
   const isBM = user?.role === 'BM';
   const isAM = user?.role === 'AM';
@@ -490,6 +500,97 @@ export const MainBoard = () => {
     });
   }, [reports, selectedMonth, filterRole, activeRole, user]);
 
+  // Excel出力用：HTML文字列で保存されているフィールド(keep/problem_gap/problem_ideal)からタグを除去する。
+  // try_who等のプレーンテキスト項目には適用しない（誤ってHTML解釈されて内容が欠落する事故を避けるため）。
+  const stripHtml = (html?: string): string => {
+    if (!html) return '';
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return (div.textContent || div.innerText || '').trim();
+  };
+
+  // BM・AM限定：選択中の月（selectedMonth）のAM・店長の週次報告をExcel(.xlsx)としてダウンロードする。
+  // 表示制御（ボタン非表示）だけに頼らず、実行時にも権限を再チェックする。
+  const handleExportExcel = async () => {
+    if (!(activeRole === 'BM' || activeRole === 'AM')) return;
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const [yearStr, monthStr] = selectedMonth.split('-');
+      // 注意：firestore.rules 上、AMがreportsコレクションをlistするには
+      // クエリのwhere('authorRole','in',[...])がルールの許可集合(['店長','AM'])と完全一致していないと
+      // 全体がpermission-deniedになる（reports/{reportId}のlistルール参照）。そのため必ずこの2つのwhereだけで
+      // クエリし、月の絞り込みはFirestore側では行わずクライアント側で行う。
+      const q = query(
+        collection(db, 'reports'),
+        where('year', '==', Number(yearStr)),
+        where('authorRole', 'in', ['店長', 'AM'])
+      );
+      const snapshot = await getDocs(q);
+      const currentUid = user?.uid || (user as any)?.id || null;
+
+      let rows = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() } as any))
+        .filter(r => {
+          const d = new Date(getTimestampMillis(r.createdAt));
+          return String(d.getMonth() + 1).padStart(2, '0') === monthStr;
+        })
+        .filter(r => isPubliclyVisibleReport(r, activeRole, currentUid));
+
+      if (rows.length === 0) {
+        setExportToast({ msg: `${yearStr}年${parseInt(monthStr)}月分のAM・店長の週次報告が見つかりませんでした。`, type: 'info' });
+        setIsExporting(false);
+        return;
+      }
+
+      // 保存済みのweekNumberを無条件に信頼せず、投稿日から週番号を再計算する
+      // （useReportStore.tsのinit()と同様の補正。画面表示とのズレを防ぎ、公式資料としての正確性を優先する）
+      rows = rows.map(r => ({
+        ...r,
+        weekNumber: getFiscalWeek(new Date(getTimestampMillis(r.createdAt)))
+      }));
+
+      rows.sort((a, b) => (a.weekNumber - b.weekNumber) || (getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt)));
+
+      const XLSX = await import('xlsx');
+
+      const sheetRows = rows.map(r => ({
+        '週番号': r.weekNumber,
+        '投稿日': new Date(getTimestampMillis(r.createdAt)).toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+        '店舗名': r.storeName || '',
+        '氏名': formatStaffName(r.authorName),
+        '役職': r.authorRole,
+        'Keep': stripHtml(r.keep),
+        'Problem(GAP)': stripHtml(r.problem_gap),
+        'Problem(本来あるべき姿)': stripHtml(r.problem_ideal),
+        'Try(誰が)': r.try_who || '',
+        'Try(いつ)': r.try_when || '',
+        'Try(何を)': r.try_what || '',
+        'Try(なぜ)': r.try_why || '',
+        'MVPスタッフ': r.mvpStaffName ? formatStaffName(r.mvpStaffName) : '',
+        'MVP詳細': r.mvpDetail || '',
+        '不安スタッフ': r.concernStaffName ? formatStaffName(r.concernStaffName) : '',
+        '不安詳細': r.concernDetail || ''
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(sheetRows);
+      ws['!cols'] = [
+        { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 8 },
+        { wch: 40 }, { wch: 30 }, { wch: 30 }, { wch: 12 }, { wch: 16 },
+        { wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 30 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '週次報告');
+      XLSX.writeFile(wb, `週次報告_${yearStr}年${parseInt(monthStr)}月_AM店長.xlsx`);
+      setExportToast({ msg: `${rows.length}件をExcelに出力しました。`, type: 'success' });
+    } catch (e) {
+      console.error('Excel export error:', e);
+      setExportToast({ msg: 'Excel出力に失敗しました。', type: 'error' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Group by week
   const groupedByWeek = React.useMemo(() => {
     const groups: { [week: number]: typeof reports } = {};
@@ -504,6 +605,31 @@ export const MainBoard = () => {
 
   return (
     <div className="pb-24 max-w-4xl mx-auto">
+      {/* Excel出力のインライン通知トースト */}
+      <AnimatePresence>
+        {exportToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[130] w-[92%] max-w-sm"
+          >
+            <div className={`flex items-center gap-2.5 rounded-2xl px-4 py-3 shadow-xl border text-sm font-bold ${
+              exportToast.type === 'success' ? 'bg-white border-success/30 text-ink'
+              : exportToast.type === 'error' ? 'bg-white border-danger/30 text-ink'
+              : 'bg-white border-qb-blue/30 text-ink'
+            }`}>
+              <span className={`grid place-items-center h-7 w-7 shrink-0 rounded-full text-white ${
+                exportToast.type === 'success' ? 'bg-success' : exportToast.type === 'error' ? 'bg-danger' : 'bg-qb-blue'
+              }`}>
+                {exportToast.type === 'success' ? <Check size={16} /> : exportToast.type === 'error' ? <AlertTriangle size={16} /> : <Info size={16} />}
+              </span>
+              <span className="flex-1 leading-snug">{exportToast.msg}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="text-center mb-6">
         <span className="inline-block bg-white/70 backdrop-blur-md px-6 py-2 rounded-full shadow-sm border border-white/50 text-gray-700 font-bold tracking-wider">
           {formatDate(currentTime)}
@@ -1001,24 +1127,36 @@ export const MainBoard = () => {
         </button>
       </div>
 
-      {/* 月変更タブ */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar px-2">
-        {availableMonths.map(month => {
-          const [y, m] = month.split('-');
-          return (
-            <button
-              key={month}
-              onClick={() => setSelectedMonth(month)}
-              className={`tap px-4 rounded-full border-2 transition-all whitespace-nowrap font-bold text-sm ${
-                selectedMonth === month
-                  ? 'border-qb-blue bg-qb-blue/10 text-qb-blue font-black'
-                  : 'border-transparent bg-white/50 text-ink-soft hover:bg-white/80'
-              }`}
-            >
-              {y}年{parseInt(m)}月
-            </button>
-          )
-        })}
+      {/* 月変更タブ + Excel出力（BM/AMのみ） */}
+      <div className="flex items-center gap-2 mb-6 px-2">
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar flex-1 min-w-0">
+          {availableMonths.map(month => {
+            const [y, m] = month.split('-');
+            return (
+              <button
+                key={month}
+                onClick={() => setSelectedMonth(month)}
+                className={`tap px-4 rounded-full border-2 transition-all whitespace-nowrap font-bold text-sm ${
+                  selectedMonth === month
+                    ? 'border-qb-blue bg-qb-blue/10 text-qb-blue font-black'
+                    : 'border-transparent bg-white/50 text-ink-soft hover:bg-white/80'
+                }`}
+              >
+                {y}年{parseInt(m)}月
+              </button>
+            )
+          })}
+        </div>
+        {(activeRole === 'BM' || activeRole === 'AM') && (
+          <button
+            onClick={handleExportExcel}
+            disabled={isExporting}
+            className="tap shrink-0 flex items-center gap-1.5 px-3 rounded-full bg-qb-blue/10 text-qb-blue border border-qb-blue/30 font-black text-sm hover:bg-qb-blue/20 transition-all disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+            Excel出力
+          </button>
+        )}
       </div>
 
       {/* レポートリスト - 月ごと・週ごとのツリー型表示 */}
