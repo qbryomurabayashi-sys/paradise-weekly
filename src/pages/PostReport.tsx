@@ -8,7 +8,7 @@ import { doc, getDoc, collection, addDoc, query, where, orderBy, limit, getDocs 
 import { useReportStore, Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useShiftStore } from '../store/useShiftStore';
-import { Send, Check, Info, Plus, X, Calendar as CalendarIcon, History, Loader2, RotateCcw, Copy, AlertTriangle, ChevronLeft, ChevronDown, Save, Clock } from 'lucide-react';
+import { Send, Check, Info, Plus, X, Calendar as CalendarIcon, History, Loader2, RotateCcw, Copy, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Save, Clock } from 'lucide-react';
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
 import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 import { formatStaffName } from '../lib/formatUtils';
@@ -43,6 +43,8 @@ export const PostReport = () => {
   const [showPrevious, setShowPrevious] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 投稿フォームは2ページ構成（1: 基本入力 / 2: MVP・不安スタッフ）。閲覧側は変更なし。
+  const [step, setStep] = useState<1 | 2>(1);
   const navigate = useNavigate();
   const { addReport, updateReport } = useReportStore();
   const { stores, staffs, initStores, initStaffs } = useShiftStore();
@@ -298,6 +300,16 @@ export const PostReport = () => {
   const isFormValid = () => {
     const required = ['keep', 'problem_gap', 'problem_ideal', 'try_who', 'try_when', 'try_what'];
     return required.every(f => formData[f] && String(formData[f]).trim().length > 0);
+  };
+
+  // 1ページ目 → 2ページ目（MVP・不安スタッフ）への遷移。必須項目チェックのみ行い、MVP欄は任意のまま。
+  const handleNext = () => {
+    if (!isFormValid()) {
+      showToast('未入力の必須項目があります。Keep / Problem / Try をご確認ください。', 'error');
+      return;
+    }
+    setStep(2);
+    window.scrollTo(0, 0);
   };
 
   const persistTasks = async (currentUser: any) => {
@@ -563,18 +575,23 @@ export const PostReport = () => {
       {/* ヘッダー */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => step === 2 ? setStep(1) : navigate('/')}
           className="tap flex items-center gap-1.5 text-ink-soft font-bold hover:text-ink transition-all text-sm"
         >
           <ChevronLeft size={18} /> 戻る
         </button>
-        <span className="text-xs font-black text-qb-blue bg-qb-blue/10 border border-qb-blue/20 px-3 py-1 rounded-full">
-          {isEditMode ? 'レポート編集' : '【#S週間報告】'} ・ 毎週日曜 18:00まで
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-black text-qb-blue bg-qb-blue/10 border border-qb-blue/20 px-3 py-1 rounded-full">
+            {isEditMode ? 'レポート編集' : '【#S週間報告】'} ・ 毎週日曜 18:00まで
+          </span>
+          <span className="text-xs font-black text-white bg-qb-blue px-2.5 py-1 rounded-full tabular shrink-0">
+            STEP {step}/2
+          </span>
+        </div>
       </div>
 
       {/* 前回のレポート参照および再送信・複製 */}
-      {previousReport && !isEditMode && (
+      {step === 1 && previousReport && !isEditMode && (
         <div className="mb-4">
           <div className="bg-qb-blue/5 border border-qb-blue/20 rounded-2xl p-3.5 shadow-sm">
             <div className="flex items-center gap-3">
@@ -632,8 +649,9 @@ export const PostReport = () => {
         </div>
       )}
 
-      {/* 1画面入力フォーム */}
+      {/* 投稿フォーム（2ページ構成） */}
       <div className="space-y-4">
+        {step === 1 && (<>
         {/* 店舗 / 氏名 */}
         <GlassCard className="p-5 shadow-lg">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -759,7 +777,9 @@ export const PostReport = () => {
             </div>
           </div>
         </GlassCard>
+        </>)}
 
+        {step === 2 && (<>
         {/* MVP・不安スタッフ（任意） - 未入力傾向のため枠線+背景色で目立たせる（主張しすぎない範囲で強め） */}
         <GlassCard className="p-5 shadow-lg border-2! border-qb-cyan/60! bg-qb-cyan/5!">
           <h2 className="text-lg font-black text-ink flex items-center gap-2 mb-1">
@@ -819,7 +839,9 @@ export const PostReport = () => {
             </div>
           </div>
         </GlassCard>
+        </>)}
 
+        {step === 1 && (<>
         {/* タスク（AMのみ） */}
         {isAM && (
           <GlassCard className="p-5 shadow-lg">
@@ -926,12 +948,13 @@ export const PostReport = () => {
             </p>
           )}
         </GlassCard>
+        </>)}
       </div>
 
-      {/* 固定アクションバー：一時保存 / 送信・予約送信 */}
+      {/* 固定アクションバー：一時保存 / 次へ・送信・予約送信 */}
       <div className="fixed bottom-0 left-0 right-0 z-[60] bg-white/95 backdrop-blur-xl border-t border-line shadow-[0_-6px_24px_rgba(0,0,75,0.08)]">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          {(!isEditMode || formData.status === 'draft') && (
+          {step === 1 && (!isEditMode || formData.status === 'draft') && (
             <button
               onClick={handleSaveDraft}
               disabled={isSubmitting}
@@ -940,21 +963,42 @@ export const PostReport = () => {
               <Save size={18} /> 一時保存
             </button>
           )}
-          <button
-            onClick={handleSubmit}
-            disabled={!isFormValid() || isSubmitting}
-            className={`tap flex-[2] rounded-2xl text-white font-black flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 ${
-              (!isFormValid() || isSubmitting) ? 'opacity-50 grayscale cursor-not-allowed' : ''
-            } ${isScheduled ? 'bg-gradient-to-r from-qb-blue-dark to-qb-blue' : 'bg-gradient-to-r from-success to-qb-cyan'}`}
-          >
-            {isSubmitting ? (
-              <><Loader2 className="animate-spin" size={18} /> 送信中</>
-            ) : isScheduled ? (
-              <><Clock size={18} /> {isEditMode ? '予約を保存' : '予約送信'}</>
-            ) : (
-              <><Send size={18} /> {isEditMode ? '上書き保存' : '送信する'}</>
-            )}
-          </button>
+          {step === 1 && (
+            <button
+              onClick={handleNext}
+              disabled={!isFormValid() || isSubmitting}
+              className={`tap flex-[2] rounded-2xl bg-gradient-to-r from-qb-blue to-qb-cyan text-white font-black flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 ${
+                (!isFormValid() || isSubmitting) ? 'opacity-50 grayscale cursor-not-allowed' : ''
+              }`}
+            >
+              次へ <ChevronRight size={18} />
+            </button>
+          )}
+          {step === 2 && (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                className="tap rounded-2xl px-5 bg-canvas text-ink font-black border border-line active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <ChevronLeft size={18} /> 戻る
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!isFormValid() || isSubmitting}
+                className={`tap flex-[2] rounded-2xl text-white font-black flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 ${
+                  (!isFormValid() || isSubmitting) ? 'opacity-50 grayscale cursor-not-allowed' : ''
+                } ${isScheduled ? 'bg-gradient-to-r from-qb-blue-dark to-qb-blue' : 'bg-gradient-to-r from-success to-qb-cyan'}`}
+              >
+                {isSubmitting ? (
+                  <><Loader2 className="animate-spin" size={18} /> 送信中</>
+                ) : isScheduled ? (
+                  <><Clock size={18} /> {isEditMode ? '予約を保存' : '予約送信'}</>
+                ) : (
+                  <><Send size={18} /> {isEditMode ? '上書き保存' : '送信する'}</>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
