@@ -760,8 +760,8 @@ export const PostReport = () => {
           </div>
         </GlassCard>
 
-        {/* MVP・不安スタッフ（任意） - 未入力傾向のため枠線を少し強めて目立たせる */}
-        <GlassCard className="p-5 shadow-lg border-2! border-qb-cyan/30!">
+        {/* MVP・不安スタッフ（任意） - 未入力傾向のため枠線+背景色で目立たせる（主張しすぎない範囲で強め） */}
+        <GlassCard className="p-5 shadow-lg border-2! border-qb-cyan/60! bg-qb-cyan/5!">
           <h2 className="text-lg font-black text-ink flex items-center gap-2 mb-1">
             <span className="grid place-items-center h-6 w-6 rounded-lg bg-qb-cyan/15 text-qb-cyan text-sm">🏆</span>
             今週のMVP・フォロー（任意）

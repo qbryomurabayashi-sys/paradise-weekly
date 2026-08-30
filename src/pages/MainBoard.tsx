@@ -249,20 +249,24 @@ export const MainBoard = () => {
   const filteredKeyPassAlertStores = React.useMemo(() => {
     if (activeRole === '店長') {
       const myStore = findMyStore();
-      if (!myStore) return [];
+      // BM自身が権限シミュレーターで店長視点を確認する場合、BMには実店舗が無く
+      // myStoreが必ず未特定になる。その場合だけ「確認用」に全店舗分を表示する
+      // （実際の店長ユーザーで店舗が特定できない場合は、データ不整合の可能性があるため
+      //  そのまま空表示にして気付けるようにする）。
+      if (!myStore) return isBM ? keyPassAlertDetails : [];
       return keyPassAlertDetails.filter(d => d.storeName === myStore.name);
     }
     return keyPassAlertDetails;
-  }, [keyPassAlertDetails, activeRole, findMyStore]);
+  }, [keyPassAlertDetails, activeRole, findMyStore, isBM]);
 
   const filteredLeavePlanAlertStores = React.useMemo(() => {
     if (activeRole === '店長') {
       const myStore = findMyStore();
-      if (!myStore) return [];
+      if (!myStore) return isBM ? leavePlanAlertStores : [];
       return leavePlanAlertStores.includes(myStore.name) ? [myStore.name] : [];
     }
     return leavePlanAlertStores;
-  }, [leavePlanAlertStores, activeRole, findMyStore]);
+  }, [leavePlanAlertStores, activeRole, findMyStore, isBM]);
 
   // ランキング計算
   const { topTurnover, topGoogle } = React.useMemo(() => {
@@ -305,7 +309,8 @@ export const MainBoard = () => {
     let visibleStores = stores;
     if (activeRole === '店長') {
       const myStore = findMyStore();
-      visibleStores = myStore ? [myStore] : [];
+      // BMが権限シミュレーターで店長視点を確認する場合は全店舗分（確認用フォールバック）
+      visibleStores = myStore ? [myStore] : (isBM ? stores : []);
     }
     const storeIds = visibleStores.map(s => s.id);
 
