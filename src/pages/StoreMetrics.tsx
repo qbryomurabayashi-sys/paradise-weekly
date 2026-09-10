@@ -169,6 +169,12 @@ export const StoreMetrics = () => {
   });
 
   const [editData, setEditData] = useState<Record<string, any>>({});
+  // TimeInput（平均カット時間/平均待ち時間）の表示を「前月コピー」等の外部更新時だけ強制的に
+  // 再同期させるための世代カウンター。フィールド自身の値をkeyに使うと入力するたびに
+  // remountが起きてReactのDOM整合が崩れる（removeChildエラー）ため、値ではなくこの世代番号をkeyにする。
+  const [timeInputGen, setTimeInputGen] = useState<Record<string, number>>({});
+  const bumpTimeInputGen = (storeId: string) =>
+    setTimeInputGen(prev => ({ ...prev, [storeId]: (prev[storeId] || 0) + 1 }));
   const [editingStoreId, setEditingStoreId] = useState<string | 'ALL' | null>(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
   // 【微調整①】保存結果トースト
@@ -350,6 +356,7 @@ export const StoreMetrics = () => {
       ...prevData,
       [storeId]: { ...(prevData[storeId] || {}), ...extractMetricData(prev) }
     }));
+    bumpTimeInputGen(storeId);
   };
 
   // 【微調整②】前月コピーの取り消し：コピー直前の状態に戻す
@@ -362,12 +369,14 @@ export const StoreMetrics = () => {
       else next[storeId] = snapshot;
       return next;
     });
+    bumpTimeInputGen(storeId);
     setCopyUndo(null);
   };
 
   // 【機能2】全店に前月をコピー（各店それぞれの前月値を editData に投入）
   const copyPrevMonthAll = () => {
     const prevYM = getPrevMonth(selectedMonth);
+    const touchedStoreIds: string[] = [];
     setEditData(prevData => {
       const next = { ...prevData };
       filteredStores.forEach(store => {
@@ -375,10 +384,17 @@ export const StoreMetrics = () => {
         const storeMetric = metrics.find(m => m.storeId === store.id && m.yearMonth === selectedMonth);
         if (!isCurrentEmpty(store.id, storeMetric)) return;
         const prev = metrics.find(m => m.storeId === store.id && m.yearMonth === prevYM);
-        if (prev) next[store.id] = { ...(next[store.id] || {}), ...extractMetricData(prev) };
+        if (prev) { next[store.id] = { ...(next[store.id] || {}), ...extractMetricData(prev) }; touchedStoreIds.push(store.id); }
       });
       return next;
     });
+    if (touchedStoreIds.length > 0) {
+      setTimeInputGen(prev => {
+        const next = { ...prev };
+        touchedStoreIds.forEach(id => { next[id] = (next[id] || 0) + 1; });
+        return next;
+      });
+    }
     setCopyUndo(null); // 一括コピー時は単体Undoを消す
   };
 
@@ -767,8 +783,8 @@ export const StoreMetrics = () => {
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 平日(%)" field="redYellowWeekday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowWeekday} step="0.1" isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="赤黄 土日祝(%)" field="redYellowHoliday" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.redYellowHoliday} step="0.1" isMasked={isMasked} />
                     {/* key に editData 値を含め、前月コピー/Undo時に非制御入力を再マウントして表示反映 */}
-                    <TimeInput key={`avgCutTimeSec-${editData[store.id]?.avgCutTimeSec ?? ''}`} editData={editData} onEditChange={handleEditChange} label="平均カット時間" field="avgCutTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgCutTimeSec} isMasked={isMasked} />
-                    <TimeInput key={`avgWaitTimeSec-${editData[store.id]?.avgWaitTimeSec ?? ''}`} editData={editData} onEditChange={handleEditChange} label="平均待ち時間" field="avgWaitTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgWaitTimeSec} isMasked={isMasked} />
+                    <TimeInput key={`avgCutTimeSec-${timeInputGen[store.id] || 0}`} editData={editData} onEditChange={handleEditChange} label="平均カット時間" field="avgCutTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgCutTimeSec} isMasked={isMasked} />
+                    <TimeInput key={`avgWaitTimeSec-${timeInputGen[store.id] || 0}`} editData={editData} onEditChange={handleEditChange} label="平均待ち時間" field="avgWaitTimeSec" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.avgWaitTimeSec} isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="男性比率(%)" field="maleRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.maleRatio} step="0.1" isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="リピート比率(%)" field="repeatRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.repeatRatio} step="0.1" isMasked={isMasked} />
                     <MetricInput editData={editData} onEditChange={handleEditChange} label="シニア割/ツキイチ(%)" field="seniorRatio" storeId={store.id} isEditing={isEditing} currentValue={storeMetric?.seniorRatio} step="0.1" isMasked={isMasked} />
