@@ -8,10 +8,10 @@ import { collection, getDocs } from 'firebase/firestore';
 import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 import { GlassCard } from '../components/ui/GlassCard';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
-import { ArrowLeft, UserPlus, CheckCircle2, AlertCircle, X, ScanSearch, Trash2, AlertTriangle, Loader2, Copy } from 'lucide-react';
+import { ArrowLeft, UserPlus, CheckCircle2, AlertCircle, X, ScanSearch, Trash2, AlertTriangle, Loader2, Copy, Eye, EyeOff } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json'; // 階層に注意
 import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -27,6 +27,8 @@ interface AppUser {
     storeName: string;
     lastLoginAt?: string;
     createdAt?: string;
+    /** true = 足跡・いいね・宛先などの一覧に出さない（デモ/テスト用アカウント） */
+    excludedFromLists?: boolean;
 }
 
 type Toast = { id: number; type: 'success' | 'error'; message: string };
@@ -118,6 +120,18 @@ export const AdminDashboard = () => {
             notify('success', 'ロールを変更しました');
         } catch (e) {
             notify('error', 'ロール変更に失敗しました');
+        }
+    };
+
+    // デモ/テスト用アカウントを一覧（足跡・いいね等）に出すかどうかを切り替える。
+    // 実在の人を名前や店舗名から自動判定して隠すのは危険なので、BMが明示的に指定する。
+    const handleToggleExcluded = async (uid: string, next: boolean) => {
+        try {
+            await updateDoc(doc(db, 'users', uid), { excludedFromLists: next });
+            setUsers(users.map(u => u.uid === uid ? { ...u, excludedFromLists: next } : u));
+            notify('success', next ? '一覧に出さない設定にしました' : '一覧に表示する設定に戻しました');
+        } catch (e) {
+            notify('error', '設定の変更に失敗しました');
         }
     };
 
@@ -348,6 +362,11 @@ export const AdminDashboard = () => {
 
             <div className="space-y-4 mt-8">
                 <h3 className="font-bold text-ink-soft">登録済みユーザー一覧</h3>
+                <p className="text-xs font-bold text-ink-soft leading-relaxed bg-canvas border border-line rounded-xl px-3 py-2">
+                    <Eye size={13} className="inline align-text-bottom text-qb-blue" /> のボタンで、そのアカウントを
+                    「見た人（足跡）」「リアクションした人」などの一覧に出すかどうかを切り替えられます。
+                    デモ用・テスト用のアカウントは <EyeOff size={13} className="inline align-text-bottom" /> にしておくと、一覧に出なくなります。
+                </p>
                 {users.map(u => {
                     const userReports = reports.filter(r => r.authorId === u.uid);
                     const latestReportDate = userReports.length > 0 ? userReports.reduce((latest, r) => new Date(r.createdAt).getTime() > new Date(latest).getTime() ? r.createdAt : latest, userReports[0].createdAt) : null;
@@ -356,7 +375,12 @@ export const AdminDashboard = () => {
                     return (
                     <GlassCard key={u.uid} className="p-4 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                            <p className="font-bold text-ink truncate">{formatStaffName(u.name)}</p>
+                            <p className="font-bold text-ink truncate flex items-center gap-1.5">
+                                {formatStaffName(u.name)}
+                                {u.excludedFromLists && (
+                                    <span className="text-xs font-black text-qb-gray bg-canvas border border-line px-1.5 py-0.5 rounded shrink-0">一覧に出さない</span>
+                                )}
+                            </p>
                             <p className="text-sm text-ink-soft truncate">{u.storeName} ({u.uid})</p>
                             {(u.role === 'AM' || u.role === '店長') && (
                                 u.lastLoginAt ? (
@@ -368,15 +392,28 @@ export const AdminDashboard = () => {
                                 )
                             )}
                         </div>
-                        <select
-                            value={u.role}
-                            onChange={(e) => handleRoleChange(u.uid, e.target.value as any)}
-                            className="tap shrink-0 p-2 rounded-lg bg-surface border border-line text-base font-bold text-ink outline-none focus:ring-2 focus:ring-qb-cyan"
-                        >
-                            <option value="店長">Ｓ</option>
-                            <option value="AM">A</option>
-                            <option value="BM">B</option>
-                        </select>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                onClick={() => handleToggleExcluded(u.uid, !u.excludedFromLists)}
+                                title={u.excludedFromLists ? '一覧に出さない設定です（押すと表示に戻します）' : '足跡・いいねの一覧に表示しています（押すと出さない設定にします）'}
+                                className={`tap grid place-items-center rounded-lg border transition-colors ${
+                                    u.excludedFromLists
+                                        ? 'bg-canvas border-line text-qb-gray'
+                                        : 'bg-qb-blue/10 border-qb-blue/30 text-qb-blue'
+                                }`}
+                            >
+                                {u.excludedFromLists ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                            <select
+                                value={u.role}
+                                onChange={(e) => handleRoleChange(u.uid, e.target.value as any)}
+                                className="tap shrink-0 p-2 rounded-lg bg-surface border border-line text-base font-bold text-ink outline-none focus:ring-2 focus:ring-qb-cyan"
+                            >
+                                <option value="店長">Ｓ</option>
+                                <option value="AM">A</option>
+                                <option value="BM">B</option>
+                            </select>
+                        </div>
                     </GlassCard>
                 )})}
             </div>

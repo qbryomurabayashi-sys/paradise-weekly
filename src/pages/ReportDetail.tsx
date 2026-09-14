@@ -12,7 +12,7 @@ import { displayRole, formatStaffName } from '../lib/formatUtils';
 import { isPubliclyVisibleReport } from '../lib/reportPermissions';
 import { safeLocal } from '../lib/safeStorage';
 import { PeopleSheet, type PeopleSection } from '../components/ui/PeopleSheet';
-import { reactionPeople, readerPeople, pendingReaderPeople, expectedReaderCount } from '../lib/readReceipts';
+import { reactionPeople, readerPeople, readerCount, pendingReaderPeople, expectedReaderCount } from '../lib/readReceipts';
 import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, ChevronDown, Sparkles, AlertTriangle, X, Columns, Rows, Users, Eye, ChevronRight } from 'lucide-react';
 
 const REACTIONS = [
@@ -89,10 +89,11 @@ export const ReportDetail = () => {
     return () => { cancelled = true; };
   }, [id, storeReport]);
 
-  // 名前解決に使う users は、シートを開いたときだけ取りに行く（起動時のreadを増やさない）
+  // 名前解決とデモアカウント除外に users を使う。
+  // useUsersStore は hasLoaded でキャッシュされるため、一覧経由で来た場合は追加の読み取りが発生しない。
   useEffect(() => {
-    if (sheet) initUsers();
-  }, [sheet, initUsers]);
+    initUsers();
+  }, [initUsers]);
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -193,9 +194,9 @@ export const ReportDetail = () => {
   // ===== いいね実施者一覧 / 閲覧の足跡 =====
   // 「まだ届いていない人」は投稿者本人・AM・BMだけに見せる（店長同士の相互監視を作らない）
   const canSeePending = isOwner || activeRole === 'BM' || activeRole === 'AM';
-  const readCount = Array.isArray(report.readBy) ? report.readBy.length : 0;
+  const readCount = readerCount(report.readBy, users);
   const reactionUserCount = (report.reactions || []).reduce(
-    (sum: number, r: any) => sum + (Array.isArray(r.userIds) ? r.userIds.length : 0),
+    (sum: number, r: any) => sum + reactionPeople(r, users).length,
     0
   );
   // 投稿者だけは、既に届いている通知（type:'read'）から閲覧時刻を補える（追加の読み取りゼロ）。

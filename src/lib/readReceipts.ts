@@ -21,6 +21,19 @@ type ReactionLike = {
 const findUser = (users: AppUser[] | undefined, uid: string) =>
   Array.isArray(users) ? users.find((u) => u.uid === uid) : undefined;
 
+/**
+ * 一覧に出す対象のアカウントだけに絞る。
+ * デモ/テスト用アカウント（BMが「一覧に出さない」にしたもの）を除く。
+ */
+export const listableUsers = (users: AppUser[] | undefined): AppUser[] =>
+  (Array.isArray(users) ? users : []).filter((u) => !u.excludedFromLists);
+
+/** そのuidが「一覧に出さない」アカウントかどうか */
+const isExcluded = (users: AppUser[] | undefined, uid: string): boolean => {
+  const u = findUser(users, uid);
+  return !!(u && u.excludedFromLists);
+};
+
 const userToPerson = (u: AppUser | undefined, uid: string, fallbackName?: string): Person => ({
   uid,
   name: (u && u.name) || fallbackName || '（名前未登録）',
@@ -35,10 +48,13 @@ const userToPerson = (u: AppUser | undefined, uid: string, fallbackName?: string
  * 「同じ長さのときだけ」名前の対応を信じ、原則は users マスタから解決する。
  */
 export function reactionPeople(rc: ReactionLike | undefined, users: AppUser[] | undefined): Person[] {
-  const ids = Array.isArray(rc?.userIds) ? rc!.userIds! : [];
+  const allIds = Array.isArray(rc?.userIds) ? rc!.userIds! : [];
   const names = Array.isArray(rc?.userNames) ? rc!.userNames! : [];
-  const trustIndex = names.length === ids.length;
-  return ids.map((uid, i) => userToPerson(findUser(users, uid), uid, trustIndex ? names[i] : undefined));
+  const trustIndex = names.length === allIds.length;
+  return allIds
+    .map((uid, i) => ({ uid, name: trustIndex ? names[i] : undefined }))
+    .filter((x) => !isExcluded(users, x.uid))
+    .map((x) => userToPerson(findUser(users, x.uid), x.uid, x.name));
 }
 
 /**
@@ -51,12 +67,22 @@ export function readerPeople(
   readAt?: Record<string, string> | undefined,
   times?: Map<string, string> | undefined
 ): Person[] {
-  const ids = Array.isArray(readBy) ? readBy : [];
+  const ids = (Array.isArray(readBy) ? readBy : []).filter((uid) => !isExcluded(users, uid));
   return ids.map((uid) => {
     const p = userToPerson(findUser(users, uid), uid);
     const at = (readAt && readAt[uid]) || (times && times.get(uid)) || undefined;
     return { ...p, at };
   });
+}
+
+/** 足跡として数える閲覧者数（除外アカウントを差し引く。表示の人数と必ず一致させる） */
+export function readerCount(
+  readBy: string[] | undefined,
+  users: AppUser[] | undefined
+): number {
+  const ids = Array.isArray(readBy) ? readBy : [];
+  if (!Array.isArray(users) || users.length === 0) return ids.length;
+  return ids.filter((uid) => !isExcluded(users, uid)).length;
 }
 
 /**
@@ -83,7 +109,7 @@ export function pendingReaderPeople(
   if (!report) return [];
   const roles = expectedReaderRoles(report.authorRole);
   const readBy = Array.isArray(report.readBy) ? report.readBy : [];
-  const list = Array.isArray(users) ? users : [];
+  const list = listableUsers(users);
   return list
     .filter((u) => roles.indexOf(u.role) !== -1)
     .filter((u) => u.uid !== report.authorId)
@@ -100,12 +126,12 @@ export function expectedReaderCount(
 ): number {
   if (!report) return 0;
   const roles = expectedReaderRoles(report.authorRole);
-  const list = Array.isArray(users) ? users : [];
+  const list = listableUsers(users);
   return list.filter((u) => roles.indexOf(u.role) !== -1 && u.uid !== report.authorId).length;
 }
 
 /** uid配列（お知らせの seenBy / hiddenBy 等）をそのまま人リストにする */
 export function uidsToPeople(uids: string[] | undefined, users: AppUser[] | undefined): Person[] {
-  const ids = Array.isArray(uids) ? uids : [];
+  const ids = (Array.isArray(uids) ? uids : []).filter((uid) => !isExcluded(users, uid));
   return ids.map((uid) => userToPerson(findUser(users, uid), uid));
 }

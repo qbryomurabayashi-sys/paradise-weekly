@@ -20,7 +20,7 @@ import { isPubliclyVisibleReport } from '../lib/reportPermissions';
 import { getFiscalWeek } from '../lib/dateUtils';
 import { safeSession } from '../lib/safeStorage';
 import { PeopleSheet } from '../components/ui/PeopleSheet';
-import { uidsToPeople } from '../lib/readReceipts';
+import { uidsToPeople, readerCount } from '../lib/readReceipts';
 
 let _globalTasksUnsub: any = null;
 let _cachedTasks: any[] = [];
@@ -1310,12 +1310,12 @@ export const MainBoard = () => {
                                         <MessageCircle size={13} className="text-qb-blue" /> {report.commentCount}
                                       </span>
                                     )}
-                                    {(report.readBy?.length || 0) > 0 && (
+                                    {readerCount(report.readBy, users) > 0 && (
                                       <span
                                         title="見た人（足跡）"
                                         className="flex items-center gap-0.5 text-xs font-black text-ink-soft tabular"
                                       >
-                                        <Eye size={13} className="text-qb-gray" /> {report.readBy!.length}
+                                        <Eye size={13} className="text-qb-gray" /> {readerCount(report.readBy, users)}
                                       </span>
                                     )}
                                     <span className="text-xs font-bold text-ink-soft tabular hidden sm:inline">

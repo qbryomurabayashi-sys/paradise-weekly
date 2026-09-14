@@ -8,6 +8,13 @@ export interface AppUser {
   role: string;
   storeName: string;
   avatarUrl?: string;
+  /**
+   * 一覧（足跡・いいね・宛先など）に出さないアカウント。
+   * デモ用/テスト用アカウントを実在の人と混ぜないためのフラグ。BMがユーザー管理から切り替える。
+   * ※ 店舗名や名前からの自動判定はしない（村林さん本人も「未設定の店舗」なので、
+   *    実在の人を誤って隠す事故が起きる）。
+   */
+  excludedFromLists?: boolean;
 }
 
 interface UsersState {
