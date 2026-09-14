@@ -6,7 +6,7 @@ import { auth, db } from '../lib/firebase';
 import { collection, onSnapshot, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { useReportStore, getTimestampMillis } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp, FileSpreadsheet, Loader2, AlertTriangle, Info, Eye } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp, FileSpreadsheet, Loader2, AlertTriangle, Info, Eye, Download } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { useShiftStore } from '../store/useShiftStore';
 import { useStoreMetricsStore } from '../store/useStoreMetricsStore';
@@ -53,6 +53,13 @@ export const MainBoard = () => {
     return () => clearTimeout(t);
   }, [exportToast]);
   const [isExporting, setIsExporting] = useState(false);
+  // 生成済みExcelの保管（保存はユーザーの2回目のタップで行う。理由はhandleExportExcelのコメント参照）
+  const [exportFile, setExportFile] = useState<{ url: string; name: string; count: number } | null>(null);
+  // 差し替え時・画面離脱時に前のobjectURLを解放してメモリリークを防ぐ
+  useEffect(() => {
+    if (!exportFile) return;
+    return () => { URL.revokeObjectURL(exportFile.url); };
+  }, [exportFile]);
 
   const isBM = user?.role === 'BM';
   const isAM = user?.role === 'AM';
@@ -513,12 +520,21 @@ export const MainBoard = () => {
     return (div.textContent || div.innerText || '').trim();
   };
 
-  // BM・AM限定：選択中の月（selectedMonth）のAM・店長の週次報告をExcel(.xlsx)としてダウンロードする。
+  // BM・AM限定：選択中の月（selectedMonth）のAM・店長の週次報告をExcel(.xlsx)として書き出す。
   // 表示制御（ボタン非表示）だけに頼らず、実行時にも権限を再チェックする。
+  //
+  // 【iOS対策：生成と保存を分ける】
+  // ここはFirestoreのgetDocsとxlsxの動的importでawaitを挟むため、この関数が保存処理に到達した時点で
+  // タップのユーザー操作コンテキスト（transient activation）は失効している。iOS Safari / iOS Chrome(WKWebView)は
+  // blob:のダウンロードをユーザー操作コンテキストに依存させるため、XLSX.writeFile()を直接呼ぶと無反応になりうる。
+  // しかも例外は出ないので「成功トーストは出たのにファイルが無い」という最悪の失敗になる。
+  // そのため保存はここでは行わず、Blob+objectURLをstateに持ち、ユーザーの2回目のタップ（<a download>）で保存させる。
   const handleExportExcel = async () => {
     if (!(activeRole === 'BM' || activeRole === 'AM')) return;
     if (isExporting) return;
     setIsExporting(true);
+    // 前回の生成物は破棄する（0件・失敗のあとに古いファイルを保存させない）
+    setExportFile(null);
     try {
       const [yearStr, monthStr] = selectedMonth.split('-');
       // 注意：firestore.rules 上、AMがreportsコレクションをlistするには
@@ -585,8 +601,15 @@ export const MainBoard = () => {
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '週次報告');
-      XLSX.writeFile(wb, `週次報告_${yearStr}年${parseInt(monthStr)}月_AM店長.xlsx`);
-      setExportToast({ msg: `${rows.length}件をExcelに出力しました。`, type: 'success' });
+      // writeFile（内部で勝手にa[download].click()する）は使わない。上記コメントの理由でiOSでは無反応になりうる。
+      const wbData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      setExportFile({
+        url: URL.createObjectURL(blob),
+        name: `週次報告_${yearStr}年${parseInt(monthStr)}月_AM店長.xlsx`,
+        count: rows.length
+      });
+      setExportToast({ msg: `${rows.length}件のExcelを作成しました。「保存」を押してください。`, type: 'success' });
     } catch (e) {
       console.error('Excel export error:', e);
       setExportToast({ msg: 'Excel出力に失敗しました。', type: 'error' });
@@ -1173,6 +1196,35 @@ export const MainBoard = () => {
           </button>
         )}
       </div>
+
+      {/* 生成したExcelの保存カード：iOSでも確実に落とせるよう、保存はユーザーの2回目のタップ（<a download>）で行う */}
+      {exportFile && (
+        <div className="px-2 mb-6">
+          <div className="flex items-center gap-3 rounded-2xl bg-white border-2 border-qb-blue/30 shadow-md p-3">
+            <span className="grid place-items-center h-10 w-10 shrink-0 rounded-xl bg-qb-blue/10 text-qb-blue">
+              <FileSpreadsheet size={20} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-ink leading-snug">Excelを作成しました（{exportFile.count}件）</p>
+              <p className="text-xs font-bold text-ink-soft truncate">{exportFile.name}</p>
+            </div>
+            <a
+              href={exportFile.url}
+              download={exportFile.name}
+              className="tap shrink-0 flex items-center justify-center gap-1.5 px-4 rounded-full bg-qb-blue text-white font-black text-sm shadow-sm active:scale-95 transition-all"
+            >
+              <Download size={16} /> 保存
+            </a>
+            <button
+              onClick={() => setExportFile(null)}
+              aria-label="閉じる"
+              className="tap shrink-0 grid place-items-center rounded-full text-ink-soft hover:bg-black/5 transition-all"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* レポートリスト - 月ごと・週ごとのツリー型表示 */}
       <div className="space-y-8 px-2">
