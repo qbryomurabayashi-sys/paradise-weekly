@@ -768,7 +768,7 @@ const ShiftCalendarView = ({ stores, staffs, requests, currentDate, setCurrentDa
 
                             {isClosedDay ? (
                                 <div className="mt-1 md:mt-2 flex items-center justify-center rounded-lg bg-gray-100 py-1.5">
-                                    <span className="text-[11px] md:text-sm font-bold text-qb-gray">休業</span>
+                                    <span className="text-xs md:text-sm font-bold text-qb-gray">休業</span>
                                 </div>
                             ) : (
                                 <div className="mt-1 md:mt-2">
@@ -778,18 +778,19 @@ const ShiftCalendarView = ({ stores, staffs, requests, currentDate, setCurrentDa
                                             {deficiency > 0 ? '+' : ''}{deficiency}
                                         </span>
                                     </div>
-                                    {/* 稼働 / 必要（補足） */}
-                                    <div className="mt-0.5 text-center tabular text-[10px] md:text-xs font-bold text-ink-soft leading-none">
-                                        稼{availableStaff}<span className="text-line mx-px">·</span>必{reqStaffCount}
+                                    {/* 稼働 / 必要（補足）：12px化に伴い、狭いセルでは折り返して情報を落とさない */}
+                                    <div className="mt-0.5 flex flex-wrap justify-center gap-x-1.5 tabular text-xs font-bold text-ink-soft leading-tight">
+                                        <span>稼{availableStaff}</span>
+                                        <span>必{reqStaffCount}</span>
                                     </div>
                                 </div>
                             )}
 
                             {(maxLeaves > 0 || absentStaff.length > 0 || workingShortStaff.length > 0) && (
-                                <div className="mt-0.5 md:mt-1 flex flex-wrap justify-center gap-x-1.5 leading-none">
-                                    {maxLeaves > 0 && <span className="tabular text-[10px] md:text-xs font-bold text-qb-blue">休{maxLeaves}</span>}
-                                    {absentStaff.length > 0 && <span className="tabular text-[10px] md:text-xs font-bold text-qb-gray">不{absentStaff.length}</span>}
-                                    {workingShortStaff.length > 0 && <span className="tabular text-[10px] md:text-xs font-bold text-qb-gray">短{workingShortStaff.length}</span>}
+                                <div className="mt-0.5 md:mt-1 flex flex-wrap justify-center gap-x-1.5 leading-tight">
+                                    {maxLeaves > 0 && <span className="tabular text-xs font-bold text-qb-blue">休{maxLeaves}</span>}
+                                    {absentStaff.length > 0 && <span className="tabular text-xs font-bold text-qb-gray">不{absentStaff.length}</span>}
+                                    {workingShortStaff.length > 0 && <span className="tabular text-xs font-bold text-qb-gray">短{workingShortStaff.length}</span>}
                                 </div>
                             )}
                         </div>

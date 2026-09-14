@@ -478,13 +478,13 @@ export const KeyPassManagement = () => {
                       </h4>
                       <div className="flex items-center gap-2">
                         <div className="text-right">
-                          <p className="text-[11px] font-bold text-ink-soft leading-tight">
+                          <p className="text-xs font-bold text-ink-soft leading-tight">
                             {storeRec?.checkMethod === 'photo' ? '写真確認: ' : storeRec?.checkMethod === 'physical' ? '現物確認: ' : '最終確認: '}
                             {storeRec?.lastCheckedByName ? formatStaffName(storeRec.lastCheckedByName) : '未確認'}
                           </p>
                           <div className="flex items-center justify-end gap-1">
                             {isRecentlyChecked(storeRec?.lastCheckedAt) && (
-                              <span className="text-[10px] font-black text-white bg-danger px-1.5 py-0.5 rounded animate-pulse">NEW</span>
+                              <span className="text-xs font-black text-white bg-danger px-1.5 py-0.5 rounded animate-pulse">NEW</span>
                             )}
                             <p className="text-xs font-black text-ink tabular">{storeRec?.lastCheckedAt ? new Date(storeRec.lastCheckedAt).toLocaleDateString() : '-'}</p>
                           </div>
@@ -591,10 +591,10 @@ export const KeyPassManagement = () => {
                             <div className="flex items-center gap-2 min-w-0">
                               <h5 className="font-black text-ink text-base truncate">
                                 {formatStaffName(staffFullName(staff))}
-                                <span className="text-[11px] text-qb-gray font-normal ml-1">({staff.employmentType === 'parttime' ? 'パート' : '正社員'})</span>
+                                <span className="text-xs text-qb-gray font-normal ml-1">({staff.employmentType === 'parttime' ? 'パート' : '正社員'})</span>
                               </h5>
                               {isAlert && (
-                                <span className="flex items-center gap-1 text-[11px] font-bold text-danger bg-danger/10 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap">
+                                <span className="flex items-center gap-1 text-xs font-bold text-danger bg-danger/10 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap">
                                   <AlertTriangle size={12} /> 1ヶ月未確認
                                 </span>
                               )}
@@ -602,7 +602,7 @@ export const KeyPassManagement = () => {
                             {!isBM && possessions.filter(p => CHECKABLE_TYPES.includes(p.type)).length > 1 && (
                               <button
                                 onClick={() => checkAllForStaff(staff, 'physical')}
-                                className="text-[11px] font-black text-success bg-success/10 hover:bg-success/20 px-2.5 py-1.5 rounded-lg border border-success/20 flex items-center gap-1 whitespace-nowrap"
+                                className="text-xs font-black text-success bg-success/10 hover:bg-success/20 px-2.5 py-1.5 rounded-lg border border-success/20 flex items-center gap-1 whitespace-nowrap"
                               >
                                 <CheckCircle size={13} /> まとめて現物確認
                               </button>
@@ -624,16 +624,16 @@ export const KeyPassManagement = () => {
                                   {CHECKABLE_TYPES.includes(p.type) && p.lastCheckedAt && (
                                     <span className="flex items-center gap-1">
                                       {isRecentlyChecked(p.lastCheckedAt) && (
-                                        <span className="text-[10px] font-black text-white bg-danger px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">NEW</span>
+                                        <span className="text-xs font-black text-white bg-danger px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">NEW</span>
                                       )}
-                                      <span className="text-[11px] bg-line px-1.5 py-0.5 rounded text-ink-soft font-medium whitespace-nowrap">
+                                      <span className="text-xs bg-line px-1.5 py-0.5 rounded text-ink-soft font-medium whitespace-nowrap">
                                         {p.checkMethod === 'photo' ? '写真' : p.checkMethod === 'physical' ? '現物' : ''} {new Date(p.lastCheckedAt).toLocaleDateString()}
                                         {p.lastCheckedByName && `・${formatStaffName(p.lastCheckedByName)}`}
                                       </span>
                                     </span>
                                   )}
                                   {CHECKABLE_TYPES.includes(p.type) && (p.photoStreak || 0) >= 2 && (
-                                    <span className="flex items-center gap-1 text-[11px] font-black text-white bg-danger px-1.5 py-0.5 rounded-md animate-pulse whitespace-nowrap">
+                                    <span className="flex items-center gap-1 text-xs font-black text-white bg-danger px-1.5 py-0.5 rounded-md animate-pulse whitespace-nowrap">
                                       <AlertTriangle size={11} /> 現物確認してください
                                     </span>
                                   )}
@@ -682,7 +682,7 @@ export const KeyPassManagement = () => {
                               ) : (
                                 <div className="bg-canvas rounded-xl border border-line p-3 space-y-3">
                                   <div className="flex items-center justify-between gap-2">
-                                    <label className="text-[11px] font-black text-ink-soft uppercase tracking-wide">登録する店舗</label>
+                                    <label className="text-xs font-black text-ink-soft uppercase tracking-wide">登録する店舗</label>
                                     <button onClick={() => setAddingFor(null)} className="tap text-xs font-bold text-qb-gray hover:text-ink px-2">閉じる</button>
                                   </div>
                                   <select
@@ -692,7 +692,7 @@ export const KeyPassManagement = () => {
                                   >
                                     {stores.map(s => <option key={s.id} value={s.id}>{abbreviateStoreName(s.name)}</option>)}
                                   </select>
-                                  <p className="text-[11px] font-bold text-ink-soft">タップで登録／解除できます</p>
+                                  <p className="text-xs font-bold text-ink-soft">タップで登録／解除できます</p>
                                   <div className="grid grid-cols-2 gap-2">
                                     {POSS_TYPES.map(pt => {
                                       const active = possessions.some(p => p.storeName === panelStoreName && p.type === pt.type);

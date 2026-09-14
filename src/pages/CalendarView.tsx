@@ -219,15 +219,17 @@ export const CalendarView = () => {
                setDate(format(cloneDay, 'yyyy-MM-dd'));
             }}
           >
-            <div className="flex items-center justify-between px-0.5">
-              <span className="flex-1">
+            {/* 12px化に伴い、2桁の件数バッジ + 2桁の日付（本日は丸背景）が
+                375px幅のセル内で衝突するため、バッジの左右padと本日丸のサイズを詰める */}
+            <div className="flex items-center justify-between gap-0.5">
+              <span className="flex-1 min-w-0">
                 {dayTasks.length > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-qb-blue text-white text-[11px] font-black tabular">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-0.5 rounded-full bg-qb-blue text-white text-xs font-black tabular">
                     {dayTasks.length}
                   </span>
                 )}
               </span>
-              <span className={`text-sm font-bold tabular ${isToday ? 'inline-flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-br from-qb-blue to-qb-cyan text-white' : ''}`}>
+              <span className={`shrink-0 text-sm font-bold tabular ${isToday ? 'inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-qb-blue to-qb-cyan text-white' : ''}`}>
                 {formattedDate}
               </span>
             </div>
