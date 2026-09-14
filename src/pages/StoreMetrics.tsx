@@ -58,13 +58,23 @@ const secToMMSS = (sec: any) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 const mmssToSec = (str: string) => {
-  const t = str.trim();
+  // 全角数字・全角コロンでも通るように正規化（iOSの日本語キーボード対策）
+  const t = String(str || '').normalize('NFKC').trim();
   if (!t) return 0;
   if (t.includes(':')) {
     const [m, s] = t.split(':');
     return (Number(m) || 0) * 60 + (Number(s) || 0);
   }
-  return Number(t) || 0; // 数値のみは秒として扱う
+  // ⚠️ iPhoneの数字キーパッドには「:」が無く mm:ss を打てないため、
+  //    数字だけの入力は「mmss」として解釈する（1340 → 13分40秒 / 330 → 3分30秒）。
+  //    以前は数字のみを秒として扱っていたので、iPhoneから 1340 と入れると
+  //    1340秒（22分20秒）で保存され、ランキングまで誤値が伝播していた。
+  const digits = t.replace(/[^0-9]/g, '');
+  if (!digits) return 0;
+  if (digits.length <= 2) return Number(digits) || 0; // 45 → 45秒
+  const m = Number(digits.slice(0, digits.length - 2)) || 0;
+  const sec = Number(digits.slice(-2)) || 0;
+  return m * 60 + sec;
 };
 
 // metricのメタ項目（保存関数側で自動付与される）。コピー時はこれらを除外する
@@ -129,7 +139,12 @@ const TimeInput = ({ label, field, storeId, isEditing, currentValue, editData, o
         onFocus={(e) => e.target.select()}
         className="tabular w-20 sm:w-24 min-h-[44px] text-right text-base font-black text-ink border border-line rounded-lg px-2 bg-white focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan outline-none"
         defaultValue={secToMMSS(displaySec)}
-        onBlur={(e) => onEditChange(storeId, field, String(mmssToSec(e.target.value)))}
+        onBlur={(e) => {
+          const sec = mmssToSec(e.target.value);
+          onEditChange(storeId, field, String(sec));
+          // 打った値を mm:ss に直して見せる（iPhoneで 1340 と入れた場合に 13:40 と分かるように）
+          e.target.value = secToMMSS(sec);
+        }}
       />
     </div>
   );
@@ -855,7 +870,7 @@ export const StoreMetrics = () => {
       {/* 【微調整①】保存結果トースト（画面下・3秒） */}
       {toast && (
         <div
-          className={`fixed ${editingStoreId === 'ALL' ? 'bottom-28 sm:bottom-6' : 'bottom-6'} left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-black border select-none secure-unselectable ${
+          className={`fixed ${editingStoreId === 'ALL' ? 'bottom-[calc(7rem+env(safe-area-inset-bottom))] sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1.5rem+env(safe-area-inset-bottom))]'} left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-black border select-none secure-unselectable ${
             toast.type === 'success'
               ? 'bg-success text-white border-success'
               : 'bg-danger text-white border-danger'

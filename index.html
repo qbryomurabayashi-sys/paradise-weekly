@@ -2,27 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- viewport-fit=cover: これが無いと env(safe-area-inset-*) が全て0になり、
+         コード側のセーフエリア対応（下部固定バー等）が丸ごと無効になる。
+         maximum-scale / user-scalable=no は撤去（拡大できないのはアクセシビリティ上不可。
+         代わりに入力欄を16px以上にしてiOSのフォーカス自動ズームを防ぐ）。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>管理者共有ツールAPP</title>
     <meta name="description" content="チームポジティブ掲示板 - 管理者共有ツールAPP" />
     
     <!-- PWA & Mobile Meta Tags -->
     <meta name="theme-color" content="#00327D" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="管理者共有ツールAPP" />
 
     <!-- Brand fonts: Noto Sans JP (和文) + Red Hat Display (欧文/数字) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- media="print" → onload で all に切り替える＝描画をブロックしない読み込み。
+         社内網でfonts.googleapis.comが無応答にされた場合でも白画面にならない
+         （index.css のフォントスタックに system-ui のフォールバックがある）。 -->
     <link
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Red+Hat+Display:wght@400;500;700;900&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
 
-    <!-- Icons -->
+    <!-- Icons: iOSは apple-touch-icon に SVG を使えない（ホーム画面アイコンが
+         ページのスクリーンショットになる）ため PNG を用意する -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
   </head>
   <body>

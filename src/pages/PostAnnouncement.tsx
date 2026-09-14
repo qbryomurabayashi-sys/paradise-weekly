@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
@@ -15,6 +15,8 @@ export const PostAnnouncement = () => {
   const [isImportant, setIsImportant] = useState(false);
   const [displayUntil, setDisplayUntil] = useState('');
   const [isPosting, setIsPosting] = useState(false);
+  // 日本語変換中フラグ（iOSのIME対策）
+  const composingRef = useRef(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
@@ -112,11 +114,21 @@ export const PostAnnouncement = () => {
 
             <div>
               <label className="text-sm font-bold text-ink-soft tracking-wide block mb-2">本文 (色や太字が使えます)</label>
-              <div className="bg-canvas rounded-2xl overflow-hidden border-2 border-line focus-within:border-qb-cyan transition-all shadow-inner">
+              {/* iOSは日本語変換の途中でも input が飛ぶため、変換確定までstateへ反映しない。
+                  変換中に innerHTML を差し替えると composition が中断してカーソルが末尾へ飛ぶ。 */}
+              <div
+                className="bg-canvas rounded-2xl overflow-hidden border-2 border-line focus-within:border-qb-cyan transition-all shadow-inner"
+                onCompositionStart={() => { composingRef.current = true; }}
+                onCompositionEnd={(e) => {
+                  composingRef.current = false;
+                  const el = e.target as HTMLElement;
+                  if (el && typeof el.innerHTML === 'string') setContent(el.innerHTML);
+                }}
+              >
                 <Editor
                   containerProps={{ style: { height: '240px', overflowY: 'auto' } }}
                   value={content}
-                  onChange={e=>setContent(e.target.value)}
+                  onChange={e=>{ if (!composingRef.current) setContent(e.target.value); }}
                 />
               </div>
             </div>

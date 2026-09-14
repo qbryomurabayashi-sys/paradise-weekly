@@ -29,8 +29,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   unreadCount: 0,
   init: (userId: string) => {
     // Request permission for native notifications
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    // iOSはユーザー操作なしの requestPermission を拒否する（例外/rejectになる）ので必ず包む
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        const p: any = Notification.requestPermission();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+    } catch {
+      /* iOS Safari など未対応環境は何もしない */
     }
 
     if (_notifUnsub && _notifUserId === userId) return () => {};
@@ -50,20 +56,26 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       let unread = 0;
       
       // Handle native notifications for new actual added docs after initial load
-      if (!isInitialLoad && 'Notification' in window && Notification.permission === 'granted') {
-        snapshot.docChanges().forEach((change) => {
-          if (change.type === 'added') {
-            const data = change.doc.data() as AppNotification;
-            // Only notify if it's unread
-            if (!data.isRead) {
-              const title = data.fromUserName ? `${data.fromUserName}からの通知` : '新しい通知';
-              new Notification(title, {
-                body: data.message,
-                icon: '/vite.svg', // Fallback icon path
-              });
+      // iOS Safari は new Notification() 自体が使えず TypeError を投げる。
+      // ここで例外が漏れると以下の set() に到達せず、通知一覧が永久に更新されなくなるため必ず包む。
+      try {
+        if (!isInitialLoad && 'Notification' in window && Notification.permission === 'granted') {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const data = change.doc.data() as AppNotification;
+              // Only notify if it's unread
+              if (!data.isRead) {
+                const title = data.fromUserName ? `${data.fromUserName}からの通知` : '新しい通知';
+                new Notification(title, {
+                  body: data.message,
+                  icon: '/apple-touch-icon.png',
+                });
+              }
             }
-          }
-        });
+          });
+        }
+      } catch (e) {
+        console.warn('Native notification unsupported on this browser:', e);
       }
 
       snapshot.forEach((doc) => {

@@ -6,9 +6,14 @@ import { getDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useReportStore, type Report } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useUsersStore } from '../store/useUsersStore';
+import { useNotificationStore } from '../store/useNotificationStore';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
 import { isPubliclyVisibleReport } from '../lib/reportPermissions';
-import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, ChevronDown, Sparkles, AlertTriangle, X, Columns, Rows } from 'lucide-react';
+import { safeLocal } from '../lib/safeStorage';
+import { PeopleSheet, type PeopleSection } from '../components/ui/PeopleSheet';
+import { reactionPeople, readerPeople, pendingReaderPeople, expectedReaderCount } from '../lib/readReceipts';
+import { ThumbsUp, Lightbulb, Rocket, Stars, Send, ChevronLeft, MessageCircle, Edit, Trash2, Loader2, Trophy, Calendar, Minimize2, ChevronUp, ChevronDown, Sparkles, AlertTriangle, X, Columns, Rows, Users, Eye, ChevronRight } from 'lucide-react';
 
 const REACTIONS = [
   { type: 'like', icon: ThumbsUp, label: 'いいね', color: 'text-qb-blue', bg: 'bg-qb-blue/10' },
@@ -38,6 +43,10 @@ export const ReportDetail = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [presetHeight, setPresetHeight] = useState<'compact' | 'normal' | 'large'>('normal');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 「誰がいいねしたか」「誰が見たか」を出すボトムシート
+  const [sheet, setSheet] = useState<{ kind: 'reactions' | 'readers' | 'comment'; commentId?: string } | null>(null);
+  const { users, init: initUsers } = useUsersStore();
+  const { notifications } = useNotificationStore();
 
   // 下部固定バーの実高を測って本文の余白を動的追従させる（被り解消）
   const bottomBarRef = useRef<HTMLDivElement>(null);
@@ -80,10 +89,15 @@ export const ReportDetail = () => {
     return () => { cancelled = true; };
   }, [id, storeReport]);
 
+  // 名前解決に使う users は、シートを開いたときだけ取りに行く（起動時のreadを増やさない）
+  useEffect(() => {
+    if (sheet) initUsers();
+  }, [sheet, initUsers]);
+
   // Load draft from localStorage on mount
   useEffect(() => {
     if (report?.id) {
-      const savedDraft = localStorage.getItem(`kpt_reply_draft_${report.id}`);
+      const savedDraft = safeLocal.getItem(`kpt_reply_draft_${report.id}`);
       if (savedDraft) {
         setComment(savedDraft);
       } else {
@@ -101,10 +115,10 @@ export const ReportDetail = () => {
   useEffect(() => {
     if (!report?.id) return;
     if (comment === '') {
-      localStorage.removeItem(`kpt_reply_draft_${report.id}`);
+      safeLocal.removeItem(`kpt_reply_draft_${report.id}`);
     } else {
       const t = setTimeout(() => {
-        localStorage.setItem(`kpt_reply_draft_${report.id}`, comment);
+        safeLocal.setItem(`kpt_reply_draft_${report.id}`, comment);
       }, 500);
       return () => clearTimeout(t);
     }
@@ -176,6 +190,27 @@ export const ReportDetail = () => {
   // 公開可否述語で一覧(MainBoard)と集合を一致させ、他人の下書き/未来予約には飛べないようにする。
   // ※月(selectedMonth)/filterRole は MainBoard 固有のローカルUIのため、別画面のここには持ち込まない。
   // currentUid / activeRole は描画ゲートより前で算出済み（二重定義しない）。
+  // ===== いいね実施者一覧 / 閲覧の足跡 =====
+  // 「まだ届いていない人」は投稿者本人・AM・BMだけに見せる（店長同士の相互監視を作らない）
+  const canSeePending = isOwner || activeRole === 'BM' || activeRole === 'AM';
+  const readCount = Array.isArray(report.readBy) ? report.readBy.length : 0;
+  const reactionUserCount = (report.reactions || []).reduce(
+    (sum: number, r: any) => sum + (Array.isArray(r.userIds) ? r.userIds.length : 0),
+    0
+  );
+  // 投稿者だけは、既に届いている通知（type:'read'）から閲覧時刻を補える（追加の読み取りゼロ）。
+  // ※ フック（useMemo）はこの位置より上の早期returnがあるため使えない。素の計算にする。
+  const readTimes = (() => {
+    const m = new Map<string, string>();
+    if (!isOwner) return m;
+    (notifications || []).forEach((n: any) => {
+      if (n && n.type === 'read' && n.reportId === report.id && !m.has(n.fromUserId)) {
+        m.set(n.fromUserId, n.createdAt);
+      }
+    });
+    return m;
+  })();
+
   const viewableReports = reports.filter(r => isPubliclyVisibleReport(r, activeRole, currentUid));
   const currentIndex = viewableReports.findIndex(r => r.id === report.id);
   const prevReport = currentIndex > 0 ? viewableReports[currentIndex - 1] : null;
@@ -205,7 +240,7 @@ export const ReportDetail = () => {
       });
       setComment('');
       if (report?.id) {
-        localStorage.removeItem(`kpt_reply_draft_${report.id}`);
+        safeLocal.removeItem(`kpt_reply_draft_${report.id}`);
       }
     } catch (e) {
       console.error(e);
@@ -268,6 +303,7 @@ export const ReportDetail = () => {
       : { given: 'bg-gradient-to-br from-purple-500 to-fuchsia-500' };
 
     return (
+      <>
       <div className={`grid gap-2 pt-3 border-t border-line ${showKpt ? 'grid-cols-5' : 'grid-cols-4'}`}>
         {showKpt && (
           <button
@@ -334,6 +370,30 @@ export const ReportDetail = () => {
           );
         })}
       </div>
+
+      {/* スマホでは title 属性のツールチップが出ないため、
+          「誰が押したか」「誰が見たか」はタップで開く一覧で見せる */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <button
+          onClick={() => setSheet({ kind: 'reactions' })}
+          className="tap flex items-center gap-2 w-full rounded-2xl border border-line bg-white px-3 text-sm font-black text-qb-blue active:scale-[0.99] transition-transform"
+        >
+          <Users size={16} className="shrink-0" />
+          <span>リアクションした人</span>
+          <span className="tabular text-ink-soft">{reactionUserCount}</span>
+          <ChevronRight size={16} className="ml-auto shrink-0 text-qb-gray" />
+        </button>
+        <button
+          onClick={() => setSheet({ kind: 'readers' })}
+          className="tap flex items-center gap-2 w-full rounded-2xl border border-line bg-white px-3 text-sm font-black text-qb-blue active:scale-[0.99] transition-transform"
+        >
+          <Eye size={16} className="shrink-0" />
+          <span>見た人（足跡）</span>
+          <span className="tabular text-ink-soft">{readCount}</span>
+          <ChevronRight size={16} className="ml-auto shrink-0 text-qb-gray" />
+        </button>
+      </div>
+      </>
     );
   };
 
@@ -441,6 +501,78 @@ export const ReportDetail = () => {
     </div>
   );
 
+  // ボトムシートの中身を組み立てる（フックは使わない＝早期returnより下のため）
+  const REACTION_LABELS: Record<string, string> = {
+    like: 'いいね',
+    learn: '学び',
+    copy: '真似る',
+    great: '素敵',
+    best_kpt: 'BEST KPT（BM選定）',
+    best_kpt_am: 'BEST KPT（AM選定）',
+    best_kpt_sm: 'BEST KPT（店長選定）',
+  };
+  const REACTION_ORDER = ['like', 'learn', 'copy', 'great', 'best_kpt', 'best_kpt_am', 'best_kpt_sm'];
+
+  const buildSheet = (): { title: string; subtitle?: string; notice?: string; sections: PeopleSection[]; empty: string } => {
+    if (!sheet) return { title: '', sections: [], empty: '' };
+
+    if (sheet.kind === 'reactions') {
+      const list = Array.isArray(report.reactions) ? report.reactions : [];
+      const sections = list
+        .slice()
+        .sort((a: any, b: any) => {
+          const ia = REACTION_ORDER.indexOf(a.type);
+          const ib = REACTION_ORDER.indexOf(b.type);
+          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        })
+        .map((rc: any) => ({
+          key: rc.type,
+          label: REACTION_LABELS[rc.type] || rc.type,
+          people: reactionPeople(rc, users),
+        }));
+      return {
+        title: 'リアクションした人',
+        subtitle: `${formatStaffName(report.authorName)}さんの第${report.weekNumber}週の報告`,
+        sections,
+        empty: 'まだリアクションはありません',
+      };
+    }
+
+    if (sheet.kind === 'comment') {
+      const c = comments.find((x: any) => x.id === sheet.commentId);
+      const rc = c?.reactions?.find((r: any) => r.type === 'like');
+      return {
+        title: 'このコメントにいいねした人',
+        subtitle: c ? `${formatStaffName(c.authorName)}さんのコメント` : undefined,
+        sections: [{ key: 'like', label: 'いいね', people: reactionPeople(rc, users) }],
+        empty: 'まだいいねはありません',
+      };
+    }
+
+    // 足跡（見た人 / まだ届いていない人）
+    const readers = readerPeople(report.readBy, users, report.readAt, readTimes);
+    const sections: PeopleSection[] = [
+      { key: 'read', label: '見た人', icon: <Eye size={12} className="text-qb-cyan" />, people: readers },
+    ];
+    if (canSeePending) {
+      sections.push({
+        key: 'pending',
+        label: 'まだ届いていない人',
+        icon: <Users size={12} className="text-qb-gray" />,
+        people: pendingReaderPeople(report, users),
+      });
+    }
+    const expected = expectedReaderCount(report, users);
+    return {
+      title: '見た人（足跡）',
+      subtitle: expected > 0 ? `見た人 ${readCount} / 届く人 ${expected}` : undefined,
+      notice:
+        'この報告を開くと、投稿した人に「見たよ」が届き、ここに足跡が残ります。既読を詰めるための機能ではありません。',
+      sections,
+      empty: 'まだ誰も開いていません',
+    };
+  };
+
   // コメント1件（いいね整列）
   const renderComment = (c: any, idx: number) => {
     const likeRc = c.reactions?.find((r: any) => r.type === 'like');
@@ -472,7 +604,15 @@ export const ReportDetail = () => {
           </div>
           <div className="text-sm text-ink leading-relaxed font-medium prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: c.text }} />
           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-line">
-            {names && <span className="text-xs text-qb-gray truncate flex-1">{names}</span>}
+            {likeCount > 0 && (
+              <button
+                onClick={(e) => { e.preventDefault(); setSheet({ kind: 'comment', commentId: c.id }); }}
+                className="tap flex items-center gap-1 min-w-0 flex-1 text-left text-xs font-bold text-qb-blue px-1 rounded-lg active:bg-canvas"
+              >
+                <span className="truncate">{names || `${likeCount}人がいいね`}</span>
+                <ChevronRight size={12} className="shrink-0 text-qb-gray" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -496,7 +636,7 @@ export const ReportDetail = () => {
   return (
     <>
       <div
-        className={`mx-auto px-4 pt-4 animate-fade-in ${layoutMode === 'split' ? 'max-w-7xl h-screen flex flex-col pb-4' : 'max-w-3xl space-y-5'}`}
+        className={`mx-auto px-4 pt-4 animate-fade-in ${layoutMode === 'split' ? 'max-w-7xl h-screen h-[100dvh] flex flex-col pb-4' : 'max-w-3xl space-y-5'}`}
         style={bottomContentPadding ? { paddingBottom: bottomContentPadding } : undefined}
       >
         {/* ヘッダーバー */}
@@ -519,9 +659,9 @@ export const ReportDetail = () => {
               >
                 <ChevronUp size={16} className="shrink-0" />
                 <span className="flex flex-col items-start leading-none min-w-0">
-                  <span className="text-[10px] font-black text-qb-gray">前へ</span>
+                  <span className="text-xs font-black text-qb-gray">前へ</span>
                   {prevReport && (
-                    <span className="text-[11px] font-bold text-ink truncate max-w-[64px]">
+                    <span className="text-xs font-bold text-ink truncate max-w-[80px]">
                       {formatStaffName(prevReport.authorName)}
                       <span className="text-qb-gray">・{displayRole(prevReport.authorRole)}</span>
                     </span>
@@ -536,9 +676,9 @@ export const ReportDetail = () => {
               >
                 <ChevronDown size={16} className="shrink-0" />
                 <span className="flex flex-col items-start leading-none min-w-0">
-                  <span className="text-[10px] font-black text-qb-gray">次へ</span>
+                  <span className="text-xs font-black text-qb-gray">次へ</span>
                   {nextReport && (
-                    <span className="text-[11px] font-bold text-ink truncate max-w-[64px]">
+                    <span className="text-xs font-bold text-ink truncate max-w-[80px]">
                       {formatStaffName(nextReport.authorName)}
                       <span className="text-qb-gray">・{displayRole(nextReport.authorRole)}</span>
                     </span>
@@ -611,7 +751,7 @@ export const ReportDetail = () => {
 
                 <div className="relative flex flex-col bg-white rounded-2xl border-2 border-line focus-within:border-qb-cyan transition-all shadow-sm p-3">
                   <SmoothTextArea
-                    className="copy-ok w-full min-h-[110px] max-h-[220px] p-2 bg-transparent outline-none resize-y text-ink font-medium text-sm leading-relaxed"
+                    className="copy-ok w-full min-h-[110px] max-h-[220px] p-2 bg-transparent outline-none resize-y text-ink font-medium text-base leading-relaxed"
                     value={comment}
                     id="split-textarea"
                     onValueChange={handleCommentChange}
@@ -669,7 +809,7 @@ export const ReportDetail = () => {
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="fixed bottom-0 left-0 right-0 p-3 pb-4 bg-white/95 backdrop-blur-xl border-t border-line z-50 shadow-[0_-6px_24px_rgba(0,0,75,0.10)]"
+              className="fixed bottom-0 left-0 right-0 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-white/95 backdrop-blur-xl border-t border-line z-50 shadow-[0_-6px_24px_rgba(0,0,75,0.10)]"
             >
               <div className="max-w-3xl mx-auto flex flex-col gap-2.5">
                 <div className="flex items-center justify-between">
@@ -708,7 +848,7 @@ export const ReportDetail = () => {
                 <div className="flex gap-2.5 items-end">
                   <div className="flex-1 relative bg-white rounded-2xl overflow-hidden border-2 border-line focus-within:border-qb-cyan transition-all shadow-sm">
                     <SmoothTextArea
-                      className={`copy-ok w-full p-3 bg-transparent outline-none resize-none text-ink font-medium leading-relaxed transition-all text-sm ${
+                      className={`copy-ok w-full p-3 bg-transparent outline-none resize-none text-ink font-medium leading-relaxed transition-all text-base ${
                         presetHeight === 'compact' ? 'min-h-[44px] h-[44px]' :
                         presetHeight === 'normal' ? 'min-h-[76px] h-[76px] sm:min-h-[110px] sm:h-[110px]' : 'min-h-[160px] h-[160px] sm:min-h-[240px] sm:h-[240px]'
                       }`}
@@ -741,13 +881,29 @@ export const ReportDetail = () => {
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           onClick={() => setIsMinimized(false)}
-          className="tap fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-qb-blue to-qb-cyan text-white font-black px-6 rounded-full shadow-xl flex items-center gap-2 hover:scale-105 active:scale-95 transition-all text-sm"
+          className="tap fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-qb-blue to-qb-cyan text-white font-black px-6 rounded-full shadow-xl flex items-center gap-2 hover:scale-105 active:scale-95 transition-all text-sm"
         >
           <MessageCircle size={18} fill="currentColor" />
           <span>返信・コメントを入力する</span>
           <ChevronUp size={14} />
         </motion.button>
       )}
+
+      {/* いいねした人 / 見た人（足跡）の一覧 */}
+      {(() => {
+        const s = buildSheet();
+        return (
+          <PeopleSheet
+            open={!!sheet}
+            onClose={() => setSheet(null)}
+            title={s.title}
+            subtitle={s.subtitle}
+            notice={s.notice}
+            sections={s.sections}
+            emptyText={s.empty}
+          />
+        );
+      })()}
 
       {/* 削除確認モーダル（confirm置換） */}
       <AnimatePresence>

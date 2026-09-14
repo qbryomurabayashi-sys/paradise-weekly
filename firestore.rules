@@ -114,7 +114,9 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         (existing().authorId == request.auth.uid && incoming().authorId == existing().authorId) ||
         isBM() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['reactions', 'readBy', 'commentCount', 'weekNumber'])
+        // readAt は「誰がいつ見たか（足跡）」の時刻。readBy と同じ updateDoc に同梱される。
+        // 許可集合を広げるだけなので、既に通っていた書き込みは通り続ける（非破壊）。
+        incoming().diff(existing()).affectedKeys().hasOnly(['reactions', 'readBy', 'readAt', 'commentCount', 'weekNumber'])
       );
       allow delete: if isSignedIn() && (existing().authorId == request.auth.uid || isBM());
 

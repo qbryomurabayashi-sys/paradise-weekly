@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { auth, db } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, limit } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, limit, arrayUnion } from 'firebase/firestore';
 import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 import { useAuthStore } from './useAuthStore';
 import { visibleAuthorRoles } from '../lib/reportPermissions';
@@ -37,6 +37,8 @@ export interface Report {
   reactions: Reaction[];
   commentCount: number;
   readBy?: string[];
+  /** 閲覧した時刻（uid → ISO文字列）。firestore.rules が未デプロイの環境では付かない */
+  readAt?: Record<string, string>;
   createdAt: any;
   status?: 'draft' | 'published';
   scheduledFor?: string;
@@ -94,6 +96,9 @@ interface ReportState {
 
 let _reportsUnsub: any = null;
 let _reportsUnsubRole: string | null = null;
+// readAt（閲覧時刻）の書き込みが firestore.rules で拒否された端末では
+// 以降その試行をやめる（既存の readBy だけは必ず書けるようにするため）
+let _readAtDenied = false;
 
 export const useReportStore = create<ReportState>((set, get) => ({
   reports: [],
@@ -335,33 +340,55 @@ export const useReportStore = create<ReportState>((set, get) => ({
   },
   markAsRead: async (reportId, userId) => {
     try {
-      const reportRef = doc(db, 'reports', reportId);
-      const reportDoc = await getDoc(reportRef);
-      if (!reportDoc.exists()) return;
+      // 購読済みのメモリ上のレポートで判定する。
+      // 以前は毎回 getDoc していたため、既読のレポートを開き直すだけで
+      // 読み取りを消費していた（Firestoreの無料枠を無駄に削っていた）。
+      const inMemory = get().reports.find(r => r.id === reportId);
+      let authorId: string | undefined = inMemory?.authorId;
 
-      const data = reportDoc.data() as Report;
-      const readBy = [...(data.readBy || [])];
-      
-      if (!readBy.includes(userId)) {
-        readBy.push(userId);
-        await updateDoc(reportRef, { readBy });
-        
-        // Notify Author
-        if (data.authorId !== userId) {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', userId));
-            const userName = userDoc.exists() ? userDoc.data()?.name || '誰か' : '誰か';
-            await addDoc(collection(db, 'users', data.authorId, 'notifications'), {
-               type: 'read',
-               fromUserId: userId,
-               fromUserName: userName,
-               reportId: reportId,
-               message: `${userName}さんがあなたのレポートを「見たよ」しました`,
-               isRead: false,
-               createdAt: new Date().toISOString()
-            });
-          } catch(e) { console.error('notify seen error', e); }
+      if (inMemory) {
+        if (Array.isArray(inMemory.readBy) && inMemory.readBy.includes(userId)) return; // 既読＝何もしない
+      } else {
+        const reportDoc = await getDoc(doc(db, 'reports', reportId));
+        if (!reportDoc.exists()) return;
+        const data = reportDoc.data() as Report;
+        authorId = data.authorId;
+        if (Array.isArray(data.readBy) && data.readBy.includes(userId)) return;
+      }
+
+      const reportRef = doc(db, 'reports', reportId);
+      const nowIso = new Date().toISOString();
+
+      // readBy は arrayUnion で足す（2端末同時オープンでの巻き戻りを防ぐ）。
+      // readAt（閲覧時刻）は firestore.rules の許可が必要なため、
+      // 拒否されたら時刻なしで書き直し、以降そのセッションでは試さない。
+      try {
+        const payload: Record<string, any> = { readBy: arrayUnion(userId) };
+        if (!_readAtDenied) payload[`readAt.${userId}`] = nowIso;
+        await updateDoc(reportRef, payload);
+      } catch (e: any) {
+        if (e?.code === 'permission-denied' && !_readAtDenied) {
+          _readAtDenied = true;
+          await updateDoc(reportRef, { readBy: arrayUnion(userId) });
+        } else {
+          throw e;
         }
+      }
+
+      // Notify Author（閲覧者の名前は認証済みユーザーから取る＝usersの読み取り不要）
+      if (authorId && authorId !== userId) {
+        try {
+          const userName = useAuthStore.getState().user?.name || '誰か';
+          await addDoc(collection(db, 'users', authorId, 'notifications'), {
+             type: 'read',
+             fromUserId: userId,
+             fromUserName: userName,
+             reportId: reportId,
+             message: `${userName}さんがあなたのレポートを「見たよ」しました`,
+             isRead: false,
+             createdAt: new Date().toISOString()
+          });
+        } catch(e) { console.error('notify seen error', e); }
       }
     } catch (error) {
       console.error('Failed to mark as read', error);

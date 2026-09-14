@@ -4,10 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { auth, db } from '../lib/firebase';
 import { collection, onSnapshot, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import Markdown from 'react-markdown';
 import { useReportStore, getTimestampMillis } from '../store/useReportStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp, FileSpreadsheet, Loader2, AlertTriangle, Info } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Lightbulb, Rocket, Stars, Sparkles, ChevronRight, ChevronDown, ChevronUp, Megaphone, Check, X, Calendar, Users, Trophy, Star, TrendingUp, FileSpreadsheet, Loader2, AlertTriangle, Info, Eye } from 'lucide-react';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { useShiftStore } from '../store/useShiftStore';
 import { useStoreMetricsStore } from '../store/useStoreMetricsStore';
@@ -19,6 +18,9 @@ import { RatingStars } from '../components/ui/Indicators';
 import { displayRole, formatStaffName, abbreviateStoreName } from '../lib/formatUtils';
 import { isPubliclyVisibleReport } from '../lib/reportPermissions';
 import { getFiscalWeek } from '../lib/dateUtils';
+import { safeSession } from '../lib/safeStorage';
+import { PeopleSheet } from '../components/ui/PeopleSheet';
+import { uidsToPeople } from '../lib/readReceipts';
 
 let _globalTasksUnsub: any = null;
 let _cachedTasks: any[] = [];
@@ -36,6 +38,8 @@ export const MainBoard = () => {
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [sessionHiddenAnns, setSessionHiddenAnns] = useState<string[]>([]);
   const [showArchive, setShowArchive] = useState(false);
+  // お知らせを誰が見たか（足跡）を出すボトムシート
+  const [annSheetId, setAnnSheetId] = useState<string | null>(null);
   const [archiveTab, setArchiveTab] = useState<'normal' | 'shortage'>('normal');
   const [calendarTasks, setCalendarTasks] = useState<any[]>([]);
   const [isInterviewAccordionOpen, setIsInterviewAccordionOpen] = useState(false);
@@ -446,18 +450,18 @@ export const MainBoard = () => {
   const activeReminderIds = activeReminders.map(r => r.id).sort().join(',');
 
   const [showReminderPopup, setShowReminderPopup] = useState(() => {
-    return sessionStorage.getItem('reminder_dismissed_ids') !== activeReminderIds;
+    return safeSession.getItem('reminder_dismissed_ids') !== activeReminderIds;
   });
 
   useEffect(() => {
     // If reminders changed and are not the ones dismissed, show popup again
-    if (sessionStorage.getItem('reminder_dismissed_ids') !== activeReminderIds && activeReminders.length > 0) {
+    if (safeSession.getItem('reminder_dismissed_ids') !== activeReminderIds && activeReminders.length > 0) {
       setShowReminderPopup(true);
     }
   }, [activeReminderIds, activeReminders.length]);
 
   const dismissReminder = () => {
-    sessionStorage.setItem('reminder_dismissed_ids', activeReminderIds);
+    safeSession.setItem('reminder_dismissed_ids', activeReminderIds);
     setShowReminderPopup(false);
   };
 
@@ -604,7 +608,7 @@ export const MainBoard = () => {
   }, [displayReports]);
 
   return (
-    <div className="pb-24 max-w-4xl mx-auto">
+    <div className="pb-32 max-w-4xl mx-auto">
       {/* Excel出力のインライン通知トースト */}
       <AnimatePresence>
         {exportToast && (
@@ -955,7 +959,7 @@ export const MainBoard = () => {
                 </div>
               </div>
 
-              <div className="max-h-[50vh] overflow-y-auto no-scrollbar prose prose-sm max-w-none text-gray-700 bg-white p-4 rounded-xl shadow-inner border border-gray-100 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: activeAnnouncements[0].content }} />
+              <div className="max-h-[50vh] max-h-[50dvh] overflow-y-auto no-scrollbar prose prose-sm max-w-none text-gray-700 bg-white p-4 rounded-xl shadow-inner border border-gray-100 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: activeAnnouncements[0].content }} />
 
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
                 {/* 見たよ以外にも直接「今後表示しない」を押せるようにする */}
@@ -1018,7 +1022,7 @@ export const MainBoard = () => {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="w-full max-w-2xl bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-paradise-ocean/50 flex flex-col max-h-[85vh] overflow-hidden"
+              className="w-full max-w-2xl bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-paradise-ocean/50 flex flex-col max-h-[85vh] max-h-[85dvh] overflow-hidden"
             >
                <div className="flex flex-col shrink-0 border-b border-gray-100 bg-white">
                  <div className="flex items-center justify-between p-6 pb-2">
@@ -1074,6 +1078,17 @@ export const MainBoard = () => {
                                   <span className="hidden sm:inline">・</span>
                                   <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
                                 </div>
+                              {canAnnounce && (
+                                <button
+                                  onClick={() => { initUsers(); setAnnSheetId(ann.id); }}
+                                  className="tap mt-2 inline-flex items-center gap-1.5 px-3 rounded-full border border-line bg-canvas text-xs font-black text-qb-blue active:scale-95 transition-transform"
+                                >
+                                  <Eye size={14} />
+                                  見た人
+                                  <span className="tabular text-ink-soft">{(ann.seenBy?.length || 0)}</span>
+                                  <ChevronRight size={12} className="text-qb-gray" />
+                                </button>
+                              )}
                               </div>
                            </div>
                            
@@ -1243,6 +1258,14 @@ export const MainBoard = () => {
                                         <MessageCircle size={13} className="text-qb-blue" /> {report.commentCount}
                                       </span>
                                     )}
+                                    {(report.readBy?.length || 0) > 0 && (
+                                      <span
+                                        title="見た人（足跡）"
+                                        className="flex items-center gap-0.5 text-xs font-black text-ink-soft tabular"
+                                      >
+                                        <Eye size={13} className="text-qb-gray" /> {report.readBy!.length}
+                                      </span>
+                                    )}
                                     <span className="text-xs font-bold text-ink-soft tabular hidden sm:inline">
                                       {new Date(report.createdAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
                                     </span>
@@ -1319,13 +1342,36 @@ export const MainBoard = () => {
         </div>
       )}
 
+      {/* お知らせの足跡（誰が「みたよ」を押したか） */}
+      {(() => {
+        const ann = announcements.find(x => x.id === annSheetId);
+        const seen = uidsToPeople(ann?.seenBy, users);
+        const hidden = uidsToPeople(ann?.hiddenBy, users).filter(
+          p => !(ann?.seenBy || []).includes(p.uid)
+        );
+        return (
+          <PeopleSheet
+            open={!!annSheetId}
+            onClose={() => setAnnSheetId(null)}
+            title="お知らせを見た人"
+            subtitle={ann ? ann.title : undefined}
+            notice="「みたよ」を押した人だけが確認済みです。「今は閉じる」で閉じた人は記録に残りません。"
+            sections={[
+              { key: 'seen', label: '「みたよ」を押した人', icon: <Check size={12} className="text-success" />, people: seen },
+              { key: 'hidden', label: '「今後表示しない」を押した人', icon: <X size={12} className="text-qb-gray" />, people: hidden },
+            ]}
+            emptyText="まだ誰も確認していません"
+          />
+        );
+      })()}
+
       {/* フローティング投稿ボタン */}
       {(!isBM || activeRole !== 'BM') && (
         <motion.button
           whileHover={{ scale: 1.1, rotate: 5 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => navigate('/post')}
-          className="fixed bottom-10 right-10 w-16 h-16 bg-gradient-to-br from-qb-blue to-qb-cyan rounded-full shadow-2xl shadow-qb-blue/30 flex items-center justify-center text-white z-50 border-4 border-white/50"
+          className="fixed bottom-[calc(2.5rem+env(safe-area-inset-bottom))] right-6 sm:right-10 w-16 h-16 bg-gradient-to-br from-qb-blue to-qb-cyan rounded-full shadow-2xl shadow-qb-blue/30 flex items-center justify-center text-white z-50 border-4 border-white/50"
         >
           <Stars size={32} />
         </motion.button>

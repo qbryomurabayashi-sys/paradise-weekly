@@ -55,9 +55,16 @@
   color-scheme: light;
 }
 
+html, body {
+  /* iOS16+ は最上部での下スワイプで再読み込みが走り、入力途中のフォームが消える */
+  overscroll-behavior-y: contain;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  /* iOSのURLバー伸縮に追従させる（未対応環境は上の100vhが効く） */
+  min-height: 100dvh;
   /* LESS IS MORE: 旧トロピカルアニメ背景 → 静謐なブランド・ブルーグレー */
   background:
     radial-gradient(1200px 800px at 100% -10%, rgba(0, 165, 235, 0.10), transparent 60%),
@@ -115,6 +122,16 @@ body {
   min-height: 44px;
 }
 
+/* iOSソフトキーボード対策（ログイン画面）
+   iOSはキーボードを出してもlayout viewportを縮めず、フォーカス要素が見える分だけ
+   画面をずらすため、入力欄の真下にあるログインボタンがキーボードの裏に残る。
+   スクロールできる余白をタッチ端末のフォーカス中だけ足して、必ず指が届くようにする。 */
+@media (hover: none) and (pointer: coarse) {
+  .login-shell:focus-within {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 50vh);
+  }
+}
+
 /* アクセシビリティ：フォーカスリングを消さない */
 @layer base {
   :focus-visible {
@@ -150,6 +167,24 @@ body {
   -ms-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+/* ⚠️ iPhone必須の例外：自分が入力する欄は必ず選択可能にする。
+   body に user-select:none が継承されると、WebKitは入力欄でも
+   キャレット移動・範囲選択・長押しのコピー/貼り付けメニューを出さない。
+   ＝iPhoneでは「文字の途中にカーソルを置けない／貼り付けできない」＝手打ちできない状態になる。
+   PCはマウスで直接キャレットを置けるため、この不具合はPC検証では絶対に出ない。
+   （持ち出し防止は App.tsx の copy/cut ハンドラ側で担保しているので方針は変わらない） */
+.secure-unselectable input,
+.secure-unselectable textarea,
+.secure-unselectable select,
+.secure-unselectable [contenteditable="true"],
+.secure-unselectable [contenteditable="true"] * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* コピペ許可エリア（週次報告のコメント欄のみ）。body の secure-unselectable を上書き。 */

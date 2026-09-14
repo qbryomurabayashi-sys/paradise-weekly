@@ -21,8 +21,8 @@ import { KeyPassManagement } from './pages/KeyPassManagement';
 import { LeavePlanDashboard } from './pages/LeavePlanDashboard';
 import { StoreMetrics } from './pages/StoreMetrics';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { useAppUpdate } from './hooks/useAppUpdate';
-import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key, RefreshCcw, TrendingUp, Lightbulb, ShieldAlert, Lock, Scissors } from 'lucide-react';
+import { useAppUpdate, applyAppUpdate } from './hooks/useAppUpdate';
+import { Home, PlusSquare, User, Bell, Sparkles, MessageCircle, Heart, X, CheckCircle, Calendar, MessageSquare, Key, RefreshCcw, TrendingUp, Lightbulb, ShieldAlert, Lock, Scissors, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -73,7 +73,7 @@ const Header = () => {
   };
 
   return (
-    <header className="p-4 sm:p-6 flex justify-between items-center max-w-5xl w-full mx-auto z-50">
+    <header className="p-4 sm:p-6 pt-[calc(1rem+env(safe-area-inset-top))] sm:pt-[calc(1.5rem+env(safe-area-inset-top))] flex justify-between items-center max-w-5xl w-full mx-auto z-50">
       <div className="flex items-center gap-3 relative">
         <div className="relative">
           <button 
@@ -183,8 +183,10 @@ const Header = () => {
                     <button 
                       onClick={() => {
                         setIsMenuOpen(false);
-                        window.location.reload();
-                      }} 
+                        // iOS standalone では location.reload() が古いJS/CSSを再取得しないことがあるため、
+                        // URLにバージョンを付けて確実に取り直す
+                        applyAppUpdate();
+                      }}
                       className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-qb-cyan/10 text-qb-blue font-bold text-left text-xs transition-colors"
                     >
                       <div className="p-1.5 bg-teal-50 text-teal-600 rounded-lg shrink-0"><RefreshCcw size={14} /></div>
@@ -283,9 +285,17 @@ const Header = () => {
 
 const SecurityGuard = () => {
   const [windowFocused, setWindowFocused] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   useEffect(() => {
     const isIframe = window.self !== window.top;
+    const showSecurityNotice = (msg: string) => setNotice(msg);
 
     const handleBlur = () => {
       // Blur when windows loses focus / switches tabs in separate tab or standalone environment
@@ -308,9 +318,15 @@ const SecurityGuard = () => {
     // .copy-ok 配下（週次報告のコメント欄のみ）はコピペを許可する例外判定
     const isCopyable = (n: any): boolean => !!(n && typeof n.closest === 'function' && n.closest('.copy-ok'));
 
+    // 自分が入力している欄（input/textarea/contenteditable）は常に許可する。
+    // iPhoneの文字編集は長押し→カット/コピー/ペーストが主操作なので、
+    // ここを塞ぐと入力欄で文字を直せない＝「iPhoneだと入力できない」になる。
+    const isEditingField = (n: any): boolean =>
+      !!(n && typeof n.closest === 'function' && n.closest('input, textarea, [contenteditable="true"]'));
+
     const handleContextMenu = (e: MouseEvent) => {
-      // コメント欄内は右クリック（コピー/貼り付けメニュー）を許可
-      if (isCopyable(e.target)) return;
+      // コメント欄・入力欄内は右クリック/長押し（コピー/貼り付けメニュー）を許可
+      if (isCopyable(e.target) || isEditingField(e.target)) return;
       e.preventDefault();
     };
 
@@ -318,14 +334,14 @@ const SecurityGuard = () => {
       // Prevent Print (Ctrl+P, Cmd+P)
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault();
-        alert('【セキュリティ警告】印刷およびPDF出力は禁止されています。');
+        showSecurityNotice('印刷・PDF出力は禁止されています');
       }
-      
+
       // Screen capture shortcut blocks / PrintScreen alerts
       if (e.key === 'PrintScreen' || e.keyCode === 44) {
         e.preventDefault();
         navigator.clipboard?.writeText?.(" "); // Clear clipboard on PrintScreen
-        alert('【セキュリティ警告】スクリーンショット（画面キャプチャ）は禁止されています。');
+        showSecurityNotice('スクリーンショットは禁止されています');
       }
     };
 
@@ -335,13 +351,17 @@ const SecurityGuard = () => {
       const selNode = sel && sel.anchorNode
         ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement)
         : null;
-      if (isCopyable(e.target) || isCopyable(selNode)) return;
+      if (isCopyable(e.target) || isCopyable(selNode) || isEditingField(e.target) || isEditingField(selNode)) return;
       e.preventDefault();
-      alert('【セキュリティ警告】コピーアクションは禁止されています。');
+      // native alert は使わない（モバイル規約。iOSではシステム文言付きモーダルになる）
+      showSecurityNotice('この内容はコピーできません');
     };
 
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
+    // iOSのホーム画面アプリ（standalone）はアプリ切替から戻っても focus が来ないことがあり、
+    // ブラインド画面から復帰できなくなる。復帰トリガを増やす。
+    window.addEventListener('pageshow', handleFocus);
     window.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -354,6 +374,7 @@ const SecurityGuard = () => {
     return () => {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handleFocus);
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -363,33 +384,55 @@ const SecurityGuard = () => {
     };
   }, []);
 
-  if (!windowFocused) {
-    return (
-      <div className="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[99999] flex flex-col items-center justify-center p-6 text-center select-none secure-unselectable">
-        <div className="max-w-md p-8 bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl space-y-6">
-          <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 text-red-500 rounded-2xl flex items-center justify-center mx-auto animate-pulse">
-            <ShieldAlert size={36} />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-black text-white">🔒 画面保護セキュリティ</h3>
-            <p className="text-sm font-bold text-slate-400 leading-relaxed">
-              システム情報を保護するため、ウインドウを一時的にブラインド加工しています。<br />
-              画面を最前面に戻すことで表示が再開されます。
+  return (
+    <>
+      {!windowFocused && (
+        <div className="fixed inset-0 bg-slate-950/98 z-[99999] flex flex-col items-center justify-center p-6 text-center select-none secure-unselectable">
+          <div className="max-w-md p-8 bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl space-y-6">
+            <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 text-red-500 rounded-2xl flex items-center justify-center mx-auto animate-pulse">
+              <ShieldAlert size={36} />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-white">🔒 画面保護セキュリティ</h3>
+              <p className="text-sm font-bold text-slate-400 leading-relaxed">
+                システム情報を保護するため、ウインドウを一時的にブラインド加工しています。<br />
+                画面を最前面に戻すことで表示が再開されます。
+              </p>
+            </div>
+            {/* iPhoneのホーム画面アプリでは復帰イベントが来ずここから戻れなくなることがある。
+                自力で解除できる出口を必ず1つ用意する（リロード手段が無いため詰むのを防ぐ）。 */}
+            <button
+              onClick={() => setWindowFocused(true)}
+              className="w-full min-h-[48px] rounded-full bg-white/10 border border-white/20 text-white font-bold active:scale-95 transition-transform"
+            >
+              ▶ 表示を再開する
+            </button>
+            <p className="text-xs text-purple-400 font-bold bg-purple-950/40 py-2 border border-purple-900/30 rounded-lg">
+              CONFIDENTIAL MONITOR
             </p>
           </div>
-          <p className="text-xs text-purple-400 font-bold bg-purple-950/40 py-2 border border-purple-900/30 rounded-lg">
-            CONFIDENTIAL MONITOR
-          </p>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return null;
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100000] flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl font-bold text-sm text-white max-w-[90vw] bg-qb-navy"
+          >
+            <ShieldAlert size={16} className="shrink-0" />
+            {notice}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 };
 
 export default function App() {
-  const { isAuthenticated, user, viewMode, setViewMode, init: initAuth, isQuotaExceeded } = useAuthStore();
+  const { isAuthenticated, user, viewMode, setViewMode, init: initAuth, isQuotaExceeded, profileError, reloadProfile } = useAuthStore();
   const { init: initReports } = useReportStore();
   const [isLanding, setIsLanding] = useState(true);
   const [isLineBrowser, setIsLineBrowser] = useState(false);
@@ -502,15 +545,15 @@ export default function App() {
           {/* 背景は index.css の静的ブランドグラデーションに一本化（常時発光blobは廃止：LESS IS MORE） */}
 
           {updateAvailable && (
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
+            <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
               <div className="bg-white/90 backdrop-blur-xl border-2 border-qb-blue/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
                 <div className="flex-1">
                   <p className="text-sm font-black text-gray-800">新しいバージョンがあります</p>
                   <p className="text-xs font-bold text-ink-soft mt-0.5">最新の機能を使用するには更新してください</p>
                 </div>
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="bg-qb-blue text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-qb-blue/90 transition-colors shadow-lg active:scale-95"
+                <button
+                  onClick={applyAppUpdate}
+                  className="tap bg-qb-blue text-white px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-qb-blue/90 transition-colors shadow-lg active:scale-95"
                 >
                   <RefreshCcw size={16} /> 更新
                 </button>
@@ -519,7 +562,29 @@ export default function App() {
           )}
 
           <Header />
-          
+
+          {/* 権限（役職）が取得できなかった場合。以前はここで黙って「店長」として扱っていたため、
+              BM/AMが自分の画面に入れず原因も分からない状態になっていた。 */}
+          {profileError && !user?.role && (
+            <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 mb-4">
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3">
+                <AlertTriangle size={20} className="text-danger shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-black text-ink">権限情報を取得できませんでした</p>
+                  <p className="text-xs font-bold text-ink-soft mt-0.5">
+                    通信状況をご確認のうえ、下のボタンで取得し直してください。
+                  </p>
+                </div>
+                <button
+                  onClick={() => reloadProfile()}
+                  className="tap shrink-0 px-4 rounded-xl bg-qb-blue text-white text-sm font-bold shadow active:scale-95 transition-transform"
+                >
+                  再取得
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 relative z-40">
               {user?.role === 'BM' && (
                 <div className="bg-white/60 backdrop-blur-md border border-qb-blue/30 p-2 rounded-xl shadow-sm mb-4 flex items-center gap-3 overflow-x-auto no-scrollbar">

@@ -130,7 +130,7 @@ export const ProjectsView = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-6 px-4 pt-6 pb-24 h-[90vh]">
+    <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-6 px-4 pt-6 pb-24 h-[90vh] h-[90dvh]">
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {confirmDelete && (

@@ -12,6 +12,7 @@ import { Send, Check, Info, Plus, X, Calendar as CalendarIcon, History, Loader2,
 import { MultiUserSelect } from '../components/ui/MultiUserSelect';
 import { getFiscalWeek, normalizeKptContent } from '../lib/dateUtils';
 import { formatStaffName } from '../lib/formatUtils';
+import { safeLocal } from '../lib/safeStorage';
 
 export const PostReport = () => {
   const { id } = useParams();
@@ -136,16 +137,9 @@ export const PostReport = () => {
 
   useEffect(() => {
     if (user?.uid && !isEditMode) {
-      const draft = localStorage.getItem(`kpt_draft_${user.uid}`);
-      if (draft) {
-        try {
-          const parsed = JSON.parse(draft);
-          if (parsed && typeof parsed === 'object') {
-            setFormData(parsed);
-          }
-        } catch(e) {
-          console.error("Failed to parse draft", e);
-        }
+      const parsed = safeLocal.getJSON<any>(`kpt_draft_${user.uid}`, null);
+      if (parsed && typeof parsed === 'object') {
+        setFormData(parsed);
       }
       setIsDraftRestored(true);
 
@@ -178,14 +172,8 @@ export const PostReport = () => {
 
         // Fallback 2: search localStorage backup
         if (!found) {
-          const localBackup = localStorage.getItem(`kpt_last_submitted_${user.uid}`);
-          if (localBackup) {
-            try {
-              found = JSON.parse(localBackup);
-            } catch (err) {
-              console.error('Failed to parse local report backup', err);
-            }
-          }
+          const localBackup = safeLocal.getJSON<any>(`kpt_last_submitted_${user.uid}`, null);
+          if (localBackup) found = localBackup;
         }
 
         if (found) {
@@ -259,8 +247,10 @@ export const PostReport = () => {
       await addReport(payload);
 
       if (currentUser.uid) {
-        localStorage.removeItem(`kpt_draft_${currentUser.uid}`);
-        localStorage.setItem(`kpt_last_submitted_${currentUser.uid}`, JSON.stringify(payload));
+        // 送信はすでに成功している。ここでの保存失敗を送信失敗として扱わない
+        // （失敗表示を見たユーザーが再送信して二重投稿になるのを防ぐ）
+        safeLocal.removeItem(`kpt_draft_${currentUser.uid}`);
+        safeLocal.setJSON(`kpt_last_submitted_${currentUser.uid}`, payload);
       }
 
       showToast('前回の報告内容を今週分として再送信しました。', 'success');
@@ -274,7 +264,7 @@ export const PostReport = () => {
 
   useEffect(() => {
     if (user?.uid && !isEditMode && isDraftRestored) {
-      localStorage.setItem(`kpt_draft_${user.uid}`, JSON.stringify(formData));
+      safeLocal.setJSON(`kpt_draft_${user.uid}`, formData);
     }
   }, [formData, user?.uid, isEditMode, isDraftRestored]);
 
@@ -357,8 +347,9 @@ export const PostReport = () => {
       await addReport(payload);
       await persistTasks(currentUser);
       if (user?.uid) {
-        localStorage.removeItem(`kpt_draft_${user.uid}`);
-        localStorage.setItem(`kpt_last_submitted_${user.uid}`, JSON.stringify(payload));
+        // 送信成功後の後片付け。ここで失敗しても送信は成立しているのでエラーにしない
+        safeLocal.removeItem(`kpt_draft_${user.uid}`);
+        safeLocal.setJSON(`kpt_last_submitted_${user.uid}`, payload);
       }
       showToast(isScheduled ? '予約投稿を登録しました' : '週次報告を送信しました', 'success');
       setTimeout(() => navigate('/'), 700);
@@ -450,7 +441,7 @@ export const PostReport = () => {
         showToast('下書きを更新しました', 'success');
       } else {
         await addReport(draftData);
-        if (user?.uid) localStorage.removeItem(`kpt_draft_${user.uid}`);
+        if (user?.uid) safeLocal.removeItem(`kpt_draft_${user.uid}`);
         showToast('下書き（未公開）としてクラウドに保存しました。一覧から編集できます。', 'success');
       }
       setTimeout(() => navigate('/'), 700);
@@ -953,7 +944,7 @@ export const PostReport = () => {
 
       {/* 固定アクションバー：一時保存 / 次へ・送信・予約送信 */}
       <div className="fixed bottom-0 left-0 right-0 z-[60] bg-white/95 backdrop-blur-xl border-t border-line shadow-[0_-6px_24px_rgba(0,0,75,0.08)]">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-2xl mx-auto px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center gap-3">
           {(!isEditMode || formData.status === 'draft') && (
             step === 1 ? (
               <button
