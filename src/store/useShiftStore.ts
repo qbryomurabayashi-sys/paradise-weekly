@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { db } from '../lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, deleteDoc, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, doc, setDoc, updateDoc, deleteDoc, where, getDocs, limit } from 'firebase/firestore';
+import { subMonths, format } from 'date-fns';
+import { safeLocal } from '../lib/safeStorage';
 
 export interface Store {
   id: string;
@@ -60,10 +62,16 @@ interface ShiftStoreState {
   hasCleanedUp: boolean;
   storesLoaded: boolean;
   staffsLoaded: boolean;
+  /** 取得に失敗したときだけ文字列が入る（成功・未着手は null）。UIの「再読込」表示用 */
+  storesError: string | null;
+  staffsError: string | null;
+  requestsError: string | null;
+  /** 取得範囲が意図的に狭められたときの通知（画面に出して黙らせない） */
+  shiftScopeNotice: string | null;
   loadedRequestsMonth: string;
-  
-  initStores: () => () => void;
-  initStaffs: () => () => void;
+
+  initStores: (force?: boolean) => () => void;
+  initStaffs: (force?: boolean) => () => void;
   initShiftRequests: (monthPrefix: string, user?: {role: string, storeName?: string, uid: string}, force?: boolean) => () => void; // "YYYY-MM"
   
   saveStore: (store: Store) => Promise<void>;
@@ -76,10 +84,69 @@ interface ShiftStoreState {
   deduplicateShiftRequests: (monthPrefix: string) => Promise<void>;
 }
 
-let _shiftRequestsUnsub: any = null;
-let _shiftRequestsMonth: string = '';
+/**
+ * 店舗マスタのローカルキャッシュ（stale-while-revalidate）。
+ * 4G/低速回線でも初回描画で店舗プルダウンが埋まるようにする。
+ * 店舗名・必要人数は非センシティブなのでキャッシュ可。
+ * スタッフ（姓名＝個人情報）は共有端末に平文で残したくないのでキャッシュしない。
+ */
+const STORES_CACHE_PREFIX = 'qb_kanri_stores_v1_';
+// 目的は初回描画だけなので短く。店舗の改名・削除が残る窓を1日に限定する。
+const STORES_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24時間
+
+/** キャッシュはユーザー単位。キーに uid を含めて別アカウント混入を構造的に消す */
+let _cacheUid = '';
+const storesCacheKey = (uid: string) => `${STORES_CACHE_PREFIX}${uid}`;
+
+const readStoresCache = (uid: string): Store[] => {
+  if (!uid) return [];
+  const cached = safeLocal.getJSON<{ savedAt?: number; stores?: Store[] }>(storesCacheKey(uid), {});
+  if (!cached.savedAt || !Array.isArray(cached.stores)) return [];
+  if (Date.now() - cached.savedAt > STORES_CACHE_MAX_AGE) return [];
+  // 壊れた値でUIが落ちないよう最低限の形だけ検査する
+  return cached.stores.filter(s => s && typeof s.id === 'string' && typeof s.name === 'string');
+};
+
+/** ログアウト時・uid切替時に店舗キャッシュを捨てる（別ユーザーへの残存を防ぐ） */
+export const clearShiftCaches = () => {
+  if (_cacheUid) safeLocal.removeItem(storesCacheKey(_cacheUid));
+};
+
+/**
+ * 認証状態が変わるたびに呼ぶ。uid が変わったら前ユーザーのキャッシュと
+ * ストア上のデータ・エラー表示を全部捨てる（共有端末での混入防止）。
+ * サインアウト時は uid='' で呼ぶ。
+ */
+export const setShiftCacheUser = (uid: string) => {
+  if (_cacheUid === uid) return;
+  clearShiftCaches();
+  _cacheUid = uid;
+  useShiftStore.setState({
+    stores: readStoresCache(uid),
+    staffs: [],
+    shiftRequests: [],
+    storesLoaded: false,
+    staffsLoaded: false,
+    loadedRequestsMonth: '',
+    storesError: null,
+    staffsError: null,
+    requestsError: null,
+    shiftScopeNotice: null,
+    isLoading: false,
+  });
+};
+
+// 同時多発の init を1本にまとめる in-flight（連打・画面往復で多重フェッチしない）
+let _storesInflight: Promise<void> | null = null;
+let _staffsInflight: Promise<void> | null = null;
+let _requestsInflight: Promise<void> | null = null;
+/** in-flight 中の月。同じ月の要求だけを弾き、別の月は必ず走らせる */
+let _requestsInflightMonth: string = '';
+/** 要求の世代。最新世代の応答だけが state を更新できる（古い応答は破棄） */
+let _requestsSeq = 0;
 
 export const useShiftStore = create<ShiftStoreState>((set, get) => ({
+  // uid 確定時に setShiftCacheUser がキャッシュを流し込む（初回描画で店舗名が出る）
   stores: [],
   staffs: [],
   shiftRequests: [],
@@ -87,12 +154,17 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
   hasCleanedUp: false,
   storesLoaded: false,
   staffsLoaded: false,
+  storesError: null,
+  staffsError: null,
+  requestsError: null,
+  shiftScopeNotice: null,
   loadedRequestsMonth: '',
 
-  initStores: () => {
-    if (get().storesLoaded) return () => {};
-    set({ isLoading: true });
-    
+  initStores: (force: boolean = false) => {
+    if (!force && get().storesLoaded) return () => {};
+    if (!force && _storesInflight) return () => {};
+    set({ isLoading: true, storesError: null });
+
     const loadStores = async () => {
       try {
         const q = query(collection(db, 'stores'), limit(100));
@@ -139,98 +211,160 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
           return a.name.localeCompare(b.name, 'ja');
         });
 
-        set({ stores, isLoading: false, storesLoaded: true });
+        set({ stores, isLoading: false, storesLoaded: true, storesError: null });
+        if (_cacheUid) safeLocal.setJSON(storesCacheKey(_cacheUid), { savedAt: Date.now(), stores });
       } catch (error: any) {
         if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
           document.dispatchEvent(new CustomEvent('quota-exceeded'));
         } else {
           console.error("Stores fetch error:", error);
         }
-        set({ isLoading: false });
+        // storesLoaded は false のまま＝再試行できる。エラーはUIに出す（黙って空にしない）
+        set({ isLoading: false, storesError: '店舗の読み込みに失敗しました' });
       }
     };
-    
-    loadStores();
+
+    _storesInflight = loadStores().finally(() => { _storesInflight = null; });
     return () => {};
   },
 
-  initStaffs: () => {
-    if (get().staffsLoaded) return () => {};
-    set({ isLoading: true });
-    
+  initStaffs: (force: boolean = false) => {
+    if (!force && get().staffsLoaded) return () => {};
+    if (!force && _staffsInflight) return () => {};
+    set({ isLoading: true, staffsError: null });
+
     const loadStaffs = async () => {
       try {
         const q = query(collection(db, 'staffs'), limit(300));
         const snapshot = await getDocs(q);
         const staffs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Staff));
-        set({ staffs, isLoading: false, staffsLoaded: true });
+        set({ staffs, isLoading: false, staffsLoaded: true, staffsError: null });
       } catch (error: any) {
         if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
           document.dispatchEvent(new CustomEvent('quota-exceeded'));
         } else {
           console.error("Staffs fetch error:", error);
         }
-        set({ isLoading: false });
+        set({ isLoading: false, staffsError: 'スタッフの読み込みに失敗しました' });
       }
     };
-    
-    loadStaffs();
+
+    _staffsInflight = loadStaffs().finally(() => { _staffsInflight = null; });
     return () => {};
   },
 
   initShiftRequests: (monthPrefix: string, user?: {role: string, storeName?: string, uid: string}, force: boolean = false) => {
     if (!force && get().loadedRequestsMonth === monthPrefix) return () => {};
-    
-    set({ isLoading: true, loadedRequestsMonth: monthPrefix });
-    
-    // Auto-cleanup old shift requests
-    if (!get().hasCleanedUp) {
-      get().cleanupOldShiftRequests();
-      set({ hasCleanedUp: true });
-    }
+    // 完了フラグは「成功後」に立てる（失敗を読み込み済みにしないため）。
+    // in-flight ガードは【同じ月】の二重フェッチだけを弾く。
+    // 別の月の要求まで落とすと、月送り中の要求が消えて「読み込み中」で永久固着する。
+    if (!force && _requestsInflight && _requestsInflightMonth === monthPrefix) return () => {};
+
+    // 最新要求だけが state を書けるようにする（古い応答＝stale response は破棄）
+    const seq = ++_requestsSeq;
+    const isStale = () => seq !== _requestsSeq;
+    _requestsInflightMonth = monthPrefix;
+
+    set({ isLoading: true });
 
     const startStr = `${monthPrefix}-01`;
     const endStr = `${monthPrefix}-31`;
-    
-    // SECURITY FIX: Prevent data leak by fetching only relevant shift requests
-    let constraints: any[] = [
-      where('date', '>=', startStr),
-      where('date', '<=', endStr)
-    ];
-
-    if (user && user.role === 'BM') {
-      // BM accesses everything
-    } else if (user && user.role === 'AM') {
-      // AM normally accesses their area
-    } else if (user && (user.role === '店長' || user.role === 'スタッフ')) {
-        const myStore = get().stores.find(s => s.name === user.storeName);
-        if (myStore) {
-            constraints.push(where('storeId', '==', myStore.id));
-        } else {
-            constraints.push(where('submittedBy', '==', user.uid));
-        }
-    } else {
-        if (user?.uid) constraints.push(where('submittedBy', '==', user.uid));
-    }
 
     const loadShiftRequests = async () => {
       try {
-        await get().deduplicateShiftRequests(monthPrefix);
+        // SECURITY: 店長/スタッフは自店に絞る。stores 未ロードのまま判定すると
+        // 黙って submittedBy フォールバック（＝別範囲のデータ）になるので、
+        // ロード完了を待ち、待っても取れなければ「クエリを投げない」。
+        if (user && (user.role === '店長' || user.role === 'スタッフ')) {
+          if (!get().storesLoaded) {
+            get().initStores();
+            if (_storesInflight) await _storesInflight;
+          }
+          if (!get().storesLoaded) {
+            // 店舗マスタが取れていない＝絞り込み条件を決められない。クエリは投げない。
+            // loadedRequestsMonth は立てていないので、stores 復旧後に再試行される。
+            if (!isStale()) set({ isLoading: false });
+            return;
+          }
+          // stores を待っている間に別の月が要求されていたら、この要求は用済み
+          if (isStale()) return;
+        }
+
+        // ここでの絞り込みは【クライアント側だけ】のもの。
+        // firestore.rules は shift_requests に `allow read: if isSignedIn()` しか書いておらず、
+        // サーバ側の店舗単位の読み取り制限は未実装＝認証済みユーザーは全件読める。
+        // したがってこれは情報漏えい対策ではなく「取得範囲を必要分に絞る」だけの実装。
+        // ルール強化（自店 / submittedBy / BM・AM に限定）は別案件。
+        const constraints: any[] = [
+          where('date', '>=', startStr),
+          where('date', '<=', endStr)
+        ];
+
+        if (user && user.role === 'BM') {
+          // BM accesses everything
+        } else if (user && user.role === 'AM') {
+          // AM normally accesses their area
+        } else if (user && (user.role === '店長' || user.role === 'スタッフ')) {
+            const myStore = get().stores.find(s => s.name === user.storeName);
+            if (myStore) {
+                constraints.push(where('storeId', '==', myStore.id));
+                if (!isStale()) set({ shiftScopeNotice: null });
+            } else {
+                // 自店が特定できないときは最小権限（自分が出した申請のみ）に絞る。
+                // 黙って範囲が変わらないよう、意図的な絞り込みであることを画面に出す。
+                constraints.push(where('submittedBy', '==', user.uid));
+                if (!isStale()) set({ shiftScopeNotice: `所属店舗（${user.storeName || '未設定'}）が店舗マスタに見つかりませんでした。あなたが登録した申請のみ表示しています。` });
+            }
+        } else {
+            if (user?.uid) constraints.push(where('submittedBy', '==', user.uid));
+        }
+
         const q = query(collection(db, 'shift_requests'), ...constraints);
         const snapshot = await getDocs(q);
         const shiftRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ShiftRequest));
-        set({ shiftRequests, isLoading: false });
+        // 古い月の応答で新しい月の state を上書きしない
+        if (isStale()) return;
+        // 成功してから「この月は読み込み済み」にする
+        set({ shiftRequests, isLoading: false, requestsError: null, loadedRequestsMonth: monthPrefix });
+
+        // ※ deduplicateShiftRequests / cleanupOldShiftRequests の呼び出しはここから外した。
+        //   - 画面を開くたびに Firestore を消す（＝不可逆）処理を走らせるべきではない。
+        //     rules 上 delete は submittedBy==uid / BM / AM のみなので、店長では他人分が
+        //     permission-denied になり「途中まで消えて止まる」非決定的な部分削除になっていた。
+        //     逆に AM/BM は画面を開くだけで全店ぶんが無言で消えうる。
+        //   - dedupe は Firestore だけ消してメモリの shiftRequests を更新しないので、
+        //     非同期化しても幽霊行が残り、タップすると setDoc で復活してしまう。
+        //   - saveShiftRequest が doc ID を `${staffId}_${date}` に固定した現行コードでは
+        //     重複は原理的に発生しない（対象は乱数ID時代のレガシーのみ＝1回限りの移行処理）。
+        //   関数本体は BM 専用の手動移行画面用に残してある（別案件）。
       } catch (error: any) {
         if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
           document.dispatchEvent(new CustomEvent('quota-exceeded'));
-        } else {
-          console.error("Shift fetch error", error);
+          if (!isStale()) set({ isLoading: false });
+          return;
         }
-        set({ isLoading: false });
+        console.error("Shift fetch error", error);
+        // 古い月の失敗で、表示中の月をエラー表示にしない
+        if (isStale()) return;
+        // 複合インデックス未作成（failed-precondition）は quota とは別物。静かに空にしない。
+        const isIndexMissing = error?.code === 'failed-precondition';
+        set({
+          isLoading: false,
+          requestsError: isIndexMissing
+            ? '申請データの検索設定（インデックス）が未作成のため読み込めませんでした。管理者に連絡してください。'
+            : '申請データの読み込みに失敗しました'
+        });
+        // 失敗した月は loadedRequestsMonth を立てていない＝再試行できる
       }
     };
     
-    loadShiftRequests();
+    _requestsInflight = loadShiftRequests().finally(() => {
+      // 自分が最新要求だったときだけ in-flight を解除する（新しい要求の目印を消さない）
+      if (!isStale()) {
+        _requestsInflight = null;
+        _requestsInflightMonth = '';
+      }
+    });
     return () => {};
   },
 
@@ -287,9 +421,9 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
 
   cleanupOldShiftRequests: async () => {
     try {
-      const now = new Date();
-      now.setMonth(now.getMonth() - 2); // 2 months ago
-      const twoMonthsAgoStr = now.toISOString().split('T')[0]; // "YYYY-MM-DD"
+      // setMonth(-2) は月末日で桁溢れして境界が最大2日ずれる（＝消し過ぎ）ため subMonths を使う
+      const twoMonthsAgo = subMonths(new Date(), 2);
+      const twoMonthsAgoStr = format(twoMonthsAgo, 'yyyy-MM-dd');
 
       const q = query(
         collection(db, 'shift_requests'),

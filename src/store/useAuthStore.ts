@@ -33,6 +33,20 @@ interface AuthState {
 
 const LOGIN_FLAG = 'session_last_login_recorded';
 
+/**
+ * shiftStore 側のキャッシュ所有者を uid に合わせる。
+ * uid が変わったとき（別タブでのサインアウト・セッション復元・トークン切替・ログアウト）に
+ * 前ユーザーの店舗キャッシュ・データ・エラー表示を捨てる。循環import回避のため動的import。
+ */
+async function syncShiftCacheUser(uid: string) {
+  try {
+    const { setShiftCacheUser } = await import('./useShiftStore');
+    setShiftCacheUser(uid);
+  } catch (e) {
+    console.error('shift cache user sync failed', e);
+  }
+}
+
 /** 沈黙したまま返ってこない通信で画面が固まらないように必ず時間切れを作る */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -78,6 +92,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (e) {
       console.error('reportStore reset on logout failed', e);
     }
+    // 店舗マスタのローカルキャッシュとエラー表示も破棄（別ユーザーへの残存を防止）
+    await syncShiftCacheUser('');
   },
 
   updateUserRole: async (targetUserId: string, newRole: '店長' | 'AM' | 'BM') => {
@@ -104,8 +120,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     onAuthStateChanged(auth, async (fbUser) => {
       if (!fbUser) {
         set({ isAuthenticated: false, user: null, isProfileLoading: false, profileError: false });
+        await syncShiftCacheUser('');
         return;
       }
+
+      // uid が変わっていたら前ユーザーのキャッシュ・データ・エラーを捨てる（共有端末対策）。
+      // 同じ uid なら何もしないので、セッション復元では即描画用キャッシュがそのまま使える。
+      await syncShiftCacheUser(fbUser.uid);
 
       // 【重要】Firestoreの読み取りを待たずに認証は通す。
       // 以前は users/{uid} の getDoc 完了まで isAuthenticated が false のままで、

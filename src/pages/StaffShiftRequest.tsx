@@ -4,15 +4,31 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { format, startOfMonth, addMonths, subMonths, eachDayOfInterval, endOfMonth, getDay, isSameDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle, User as UserIcon, Store as StoreIcon, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle, User as UserIcon, Store as StoreIcon, AlertTriangle, AlertCircle, RefreshCw, Info } from 'lucide-react';
 import * as JapaneseHolidays from 'japanese-holidays';
 import { formatStaffName } from '../lib/formatUtils';
 
 const isHoliday = (date: Date) => getDay(date) === 0 || JapaneseHolidays.isHoliday(date) !== undefined;
 
+/** 読み込み失敗を黙って空にしないための共通表示（メッセージ＋再読込ボタン） */
+const LoadFailureNotice = ({ message, onRetry, retrying }: { message: string; onRetry: () => void; retrying: boolean }) => (
+    <div className="mt-2 bg-danger/10 border border-danger/20 rounded-xl p-3 flex items-center gap-3">
+        <AlertCircle size={18} className="text-danger shrink-0" />
+        <p className="flex-1 text-sm font-bold text-danger leading-relaxed">{message}</p>
+        <button
+            onClick={onRetry}
+            disabled={retrying}
+            className="min-h-[44px] px-4 rounded-xl bg-surface border border-danger/30 text-danger text-sm font-black flex items-center gap-1.5 active:scale-95 transition disabled:opacity-60"
+        >
+            <RefreshCw size={16} className={retrying ? 'animate-spin' : ''} />
+            {retrying ? '読込中' : '再読込'}
+        </button>
+    </div>
+);
+
 export const StaffShiftRequest = () => {
     const { user } = useAuthStore();
-    const { stores, staffs, shiftRequests, initStores, initStaffs, initShiftRequests, saveShiftRequest, deleteShiftRequest } = useShiftStore();
+    const { stores, staffs, shiftRequests, storesLoaded, staffsLoaded, storesError, staffsError, requestsError, shiftScopeNotice, loadedRequestsMonth, isLoading, initStores, initStaffs, initShiftRequests, saveShiftRequest, deleteShiftRequest } = useShiftStore();
     const { addAnnouncement } = useAnnouncementStore();
     const [currentDate, setCurrentDate] = useState(addMonths(new Date(), 1));
     
@@ -36,10 +52,12 @@ export const StaffShiftRequest = () => {
     }, []);
 
     useEffect(() => {
+        // 店舗マスタが揃うまで投げない（権限分岐が stores 依存なので、黙って別範囲を取るのを防ぐ）
+        if (!storesLoaded) return;
         const prefix = format(currentDate, 'yyyy-MM');
         const unsub = initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined);
         return () => unsub();
-    }, [currentDate, user?.uid]);
+    }, [currentDate, user?.uid, user?.role, storesLoaded]);
 
     useEffect(() => {
         if (user && stores.length > 0) {
@@ -53,6 +71,27 @@ export const StaffShiftRequest = () => {
     }, [user, stores, selectedStoreId]);
 
     const filteredStaffs = staffs.filter(s => s.storeId === selectedStoreId);
+
+    // select は「読み込み中／取得失敗／本当に0件／正常」の4状態を取り違えないこと。
+    // 正常以外は disabled にして、空のネイティブピッカーが開くのを防ぐ。
+    // （キャッシュから即描画できた場合は length>0 なので 'ready'＝操作可能）
+    const selectState = (count: number, loaded: boolean, error: string | null): 'loading' | 'error' | 'empty' | 'ready' => {
+        if (count > 0) return 'ready';
+        if (error) return 'error';
+        if (!loaded) return 'loading';
+        return 'empty';
+    };
+    const storesState = selectState(stores.length, storesLoaded, storesError);
+    const staffsState = selectState(filteredStaffs.length, staffsLoaded, staffsError);
+    const isStoresPending = storesState === 'loading';
+    const isStaffsPending = staffsState === 'loading';
+
+    // 既存申請が届く前のタップは「他人の申請を上書きする」不可逆事故になるので受け付けない
+    const monthPrefix = format(currentDate, 'yyyy-MM');
+    const isRequestsReady = loadedRequestsMonth === monthPrefix;
+    // キャッシュだけで表示している状態（requiredStaffing・定休日が古い可能性がある）。
+    // この状態で確定させると誤った不足人数のお知らせが全社配信されるため、申請は止める。
+    const isStoresStale = !storesLoaded && stores.length > 0;
 
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(monthStart);
@@ -172,6 +211,9 @@ export const StaffShiftRequest = () => {
     };
 
     const handleDateClick = (date: Date) => {
+        // 既存申請が未取得のまま下書きを作ると、確定時に existing 無しで setDoc され
+        // 他人が入れた申請種別を上書きしてしまう（doc IDは staffId_date 固定）。
+        if (!isRequestsReady) return;
         if (!selectedStaffId) {
             setStatusMessage({type: 'error', text: '先にスタッフを選択してください'});
             setTimeout(() => setStatusMessage(null), 3000);
@@ -344,17 +386,49 @@ export const StaffShiftRequest = () => {
                 </div>
             )}
 
+            {requestsError && (
+                <LoadFailureNotice
+                    message={requestsError}
+                    onRetry={() => initShiftRequests(format(currentDate, 'yyyy-MM'), user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true)}
+                    retrying={isLoading}
+                />
+            )}
+
+            {shiftScopeNotice && (
+                <div className="p-4 rounded-2xl flex items-start gap-3 bg-qb-yellow/15 text-ink">
+                    <Info size={20} className="shrink-0 text-qb-blue" />
+                    <p className="text-sm font-bold leading-relaxed">{shiftScopeNotice}</p>
+                </div>
+            )}
+
             <div className="bg-surface p-4 rounded-3xl shadow-sm border border-line space-y-4">
                 <div>
                     <label className="text-sm font-bold text-ink-soft mb-1 flex items-center gap-1"><StoreIcon size={14}/> 店舗を選択</label>
                     <select
                         value={selectedStoreId}
                         onChange={(e) => { setSelectedStoreId(e.target.value); setSelectedStaffId(''); }}
-                        className="w-full min-h-[44px] px-4 rounded-xl bg-canvas border border-line focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan focus:outline-none font-bold text-ink"
+                        disabled={storesState !== 'ready'}
+                        className="w-full min-h-[44px] px-4 rounded-xl bg-canvas border border-line focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan focus:outline-none font-bold text-ink text-base disabled:opacity-70"
                     >
-                        <option value="">店舗を選択してください</option>
+                        {/* 空のネイティブピッカーを開かせない：'ready' 以外は disabled のまま状況を文言で出す */}
+                        <option value="">
+                            {storesState === 'loading' ? '店舗を読み込み中…' : storesState === 'error' ? '店舗を読み込めませんでした' : storesState === 'empty' ? '登録された店舗がありません' : '店舗を選択してください'}
+                        </option>
                         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
+                    {/* キャッシュ表示中であることを必ず知らせる。エラー文だけだと
+                        プルダウンに店舗名が並んでいるので大半のユーザーが無視して進んでしまう */}
+                    {isStoresStale && (
+                        <div className="mt-2 bg-qb-yellow/15 border border-line rounded-xl p-3 flex items-start gap-2">
+                            <Info size={18} className="shrink-0 text-qb-blue mt-0.5" />
+                            <p className="flex-1 text-sm font-bold text-ink leading-relaxed">
+                                保存済みの一覧を表示しています（最新ではない可能性があります）。申請の確定には店舗情報の再読込が必要です。
+                            </p>
+                        </div>
+                    )}
+                    {storesError && (
+                        <LoadFailureNotice message={storesError} onRetry={() => initStores(true)} retrying={isLoading} />
+                    )}
                 </div>
 
                 {selectedStoreId && (
@@ -363,9 +437,12 @@ export const StaffShiftRequest = () => {
                         <select
                             value={selectedStaffId}
                             onChange={(e) => setSelectedStaffId(e.target.value)}
-                            className="w-full min-h-[44px] px-4 rounded-xl bg-canvas border border-line focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan focus:outline-none font-bold text-ink"
+                            disabled={staffsState !== 'ready'}
+                            className="w-full min-h-[44px] px-4 rounded-xl bg-canvas border border-line focus:ring-2 focus:ring-qb-cyan focus:border-qb-cyan focus:outline-none font-bold text-ink text-base disabled:opacity-70"
                         >
-                            <option value="">お名前を選択してください</option>
+                            <option value="">
+                                {staffsState === 'loading' ? 'スタッフを読み込み中…' : staffsState === 'error' ? 'スタッフを読み込めませんでした' : staffsState === 'empty' ? 'この店舗に登録されたスタッフがいません' : 'お名前を選択してください'}
+                            </option>
                             {filteredStaffs.map(s => {
                                 const draftCount = getStaffDraftCount(s.id);
                                 return (
@@ -375,6 +452,9 @@ export const StaffShiftRequest = () => {
                                 );
                             })}
                         </select>
+                        {staffsError && (
+                            <LoadFailureNotice message={staffsError} onRetry={() => initStaffs(true)} retrying={isStaffsPending} />
+                        )}
                         {selectedStaffId && (
                             <div className="mt-4 hidden">
                             </div>
@@ -418,17 +498,21 @@ export const StaffShiftRequest = () => {
                         <div className="mb-4">
                             <button
                                 onClick={() => {
+                                    if (!isRequestsReady) return;
                                     const dateStr = format(monthStart, 'yyyy-MM-01');
                                     setDraftRequests(prev => ({
                                         ...prev,
                                         [selectedStaffId]: {
+                                            // 既存の下書きを丸ごと置き換えない（消失・上書き防止）
+                                            ...(prev[selectedStaffId] || {}),
                                             [dateStr]: '希望休なし'
                                         }
                                     }));
                                 }}
-                                className="tap w-full bg-qb-blue/5 text-qb-blue text-base font-black rounded-xl border-2 border-qb-blue/20 hover:bg-qb-blue/10 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                disabled={!isRequestsReady}
+                                className="tap w-full bg-qb-blue/5 text-qb-blue text-base font-black rounded-xl border-2 border-qb-blue/20 hover:bg-qb-blue/10 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                             >
-                                「今月は希望休なし」として一括送信リストに追加
+                                {isRequestsReady ? '「今月は希望休なし」として一括送信リストに追加' : storesError ? '店舗情報の再読込が必要です' : '予定を読み込み中…'}
                             </button>
                         </div>
 
@@ -436,6 +520,34 @@ export const StaffShiftRequest = () => {
                             日をタップで「{selectedType}」を追加・解除。<br/>全スタッフの編集が終わったら下部から一括申請できます。
                         </p>
 
+                        <div className="relative">
+                        {/* 読込中は「押せそうに見えて無反応」を作らないよう、見える形で塞ぐ。
+                            店舗情報が取れていないと申請の取得自体が始まらないので、
+                            その場合は嘘の「読み込み中」を出さず、原因と再読込を出す */}
+                        {!isRequestsReady && (
+                            <div className="absolute inset-0 z-20 bg-surface/85 rounded-xl flex items-center justify-center p-3">
+                                {storesError ? (
+                                    <div className="bg-surface border border-danger/20 shadow-sm rounded-xl p-3 flex flex-col items-center gap-2 max-w-full">
+                                        <p className="text-sm font-bold text-danger text-center leading-relaxed">
+                                            予定を読み込めていません（店舗情報が取得できていないため）
+                                        </p>
+                                        <button
+                                            onClick={() => initStores(true)}
+                                            disabled={isLoading}
+                                            className="min-h-[44px] px-4 rounded-xl bg-surface border border-danger/30 text-danger text-sm font-black flex items-center gap-1.5 active:scale-95 transition disabled:opacity-60"
+                                        >
+                                            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                                            {isLoading ? '読込中' : '再読込'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="flex items-center gap-2 bg-surface border border-line shadow-sm rounded-xl px-4 py-3 text-base font-black text-qb-blue">
+                                        <RefreshCw size={18} className="animate-spin" />
+                                        予定を読み込み中…
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <div className="grid grid-cols-7 gap-1">
                             {['日', '月', '火', '水', '木', '金', '土'].map((d, i) => (
                                 <div key={d} className={`text-center font-black text-xs py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-qb-blue' : 'text-ink-soft'}`}>
@@ -479,6 +591,7 @@ export const StaffShiftRequest = () => {
                                     <div key={day.toString()} className="flex flex-col gap-0.5">
                                         <button
                                             onClick={() => handleDateClick(day)}
+                                            disabled={!isRequestsReady}
                                             className={`h-14 w-full flex flex-col items-center justify-center rounded-xl border-2 transition-all active:scale-95 ${bgColor} ${textColor} ${borderColor} ${shadow}`}
                                         >
                                             <span className={`text-sm font-black tabular ${isToday ? 'bg-gradient-to-br from-qb-blue to-qb-cyan text-white w-6 h-6 rounded-full flex items-center justify-center' : ''}`}>
@@ -510,6 +623,7 @@ export const StaffShiftRequest = () => {
                                     </div>
                                 );
                             })}
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -585,15 +699,15 @@ export const StaffShiftRequest = () => {
                     )}
                     <button
                         onClick={handleSubmitAll}
-                        disabled={!hasAnyChanges || isSubmitting}
+                        disabled={!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded}
                         className={`flex-1 min-h-[52px] py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-md
-                            ${!hasAnyChanges || isSubmitting
+                            ${!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded
                                 ? 'bg-canvas text-qb-gray cursor-not-allowed shadow-none'
                                 : 'bg-gradient-to-r from-qb-blue to-qb-cyan text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
                             }
                         `}
                     >
-                        {isSubmitting ? '処理中...' : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
+                        {!storesLoaded ? '店舗情報の再読込が必要です' : !isRequestsReady ? '予定を読み込み中…' : isSubmitting ? '処理中...' : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
                         {hasAnyChanges && !isSubmitting && <CheckCircle size={20} />}
                     </button>
                 </div>
