@@ -84,31 +84,48 @@ export const StaffShiftRequest = () => {
     const monthPrefix = format(currentDate, 'yyyy-MM');
     type DraftMap = Record<string, Record<string, ShiftRequestType | null>>;
     const draftsKey = user?.uid ? `qb_kanri_shift_drafts_v2_${user.uid}` : '';
+    /**
+     * 旧バージョン（月で分かれていない平坦な形）の保存キー。
+     * アプリを更新した時点で下書きを端末に残していた人の分を拾うために読む。
+     * 下書きの永続化は「iPhoneが背景タブを破棄して選択が消える」ことを救う機能なので、
+     * 移行を落とすと本末転倒（更新した瞬間に下書きが消えたように見える）。
+     */
+    const legacyDraftsKey = user?.uid ? `qb_kanri_shift_drafts_v1_${user.uid}` : '';
     /** どの月まで復元したか。月を送ったら必ずその月ぶんを読み直す */
     const [restoredMonth, setRestoredMonth] = useState('');
     /** 表示していない月に残っている下書き（勝手に消さない・勝手に送らない。件数と月を出すだけ） */
     const [otherMonthDrafts, setOtherMonthDrafts] = useState<Array<{ month: string; count: number }>>([]);
 
-    /** 保存形式を読む。v1（月で分かれていない平坦な形）は日付から月に振り分けて受け入れる */
-    const readDraftBlob = (): { savedAt?: number; byMonth: Record<string, DraftMap> } => {
-        const saved = safeLocal.getJSON<{ savedAt?: number; byMonth?: any; drafts?: any }>(draftsKey, {});
+    /**
+     * 保存形式を読む。
+     * v2（月ごと）が無いときだけ v1（平坦）を読み、日付から月へ振り分けて受け入れる。
+     * savedAt も v1 側のものを返すので、7日で捨てる既存の失効判定がそのまま効く
+     * （古い下書きが無期限に復活しない）。
+     */
+    const readDraftBlob = (): { savedAt?: number; byMonth: Record<string, DraftMap>; fromLegacy: boolean } => {
+        const saved = safeLocal.getJSON<{ savedAt?: number; byMonth?: any }>(draftsKey, {});
         const byMonth: Record<string, DraftMap> = {};
         if (saved.byMonth && typeof saved.byMonth === 'object') {
             Object.entries(saved.byMonth).forEach(([m, d]) => {
                 if (d && typeof d === 'object') byMonth[m] = d as DraftMap;
             });
-        } else if (saved.drafts && typeof saved.drafts === 'object') {
-            // v1 からの移行（捨てずに月ごとへ振り分ける）
-            Object.entries(saved.drafts as DraftMap).forEach(([sid, dates]) => {
-                Object.entries(dates || {}).forEach(([dStr, t]) => {
-                    const m = dStr.slice(0, 7);
-                    if (!byMonth[m]) byMonth[m] = {};
-                    if (!byMonth[m][sid]) byMonth[m][sid] = {};
-                    byMonth[m][sid][dStr] = t;
-                });
-            });
+            return { savedAt: saved.savedAt, byMonth, fromLegacy: false };
         }
-        return { savedAt: saved.savedAt, byMonth };
+        // v2 の保存がまだ無い＝更新直後。v1 を読んで月ごとへ振り分ける
+        if (!legacyDraftsKey) return { savedAt: saved.savedAt, byMonth, fromLegacy: false };
+        const legacy = safeLocal.getJSON<{ savedAt?: number; drafts?: any }>(legacyDraftsKey, {});
+        if (!legacy.savedAt || !legacy.drafts || typeof legacy.drafts !== 'object') {
+            return { savedAt: saved.savedAt, byMonth, fromLegacy: false };
+        }
+        Object.entries(legacy.drafts as DraftMap).forEach(([sid, dates]) => {
+            Object.entries(dates || {}).forEach(([dStr, t]) => {
+                const m = dStr.slice(0, 7);
+                if (!byMonth[m]) byMonth[m] = {};
+                if (!byMonth[m][sid]) byMonth[m][sid] = {};
+                byMonth[m][sid][dStr] = t;
+            });
+        });
+        return { savedAt: legacy.savedAt, byMonth, fromLegacy: true };
     };
 
     const countDrafts = (d: DraftMap) => Object.values(d || {}).reduce((n, dates) => n + Object.keys(dates || {}).length, 0);
@@ -120,9 +137,11 @@ export const StaffShiftRequest = () => {
         setDraftRequests({});
         setOtherMonthDrafts([]);
         if (!savedAt) return;
-        // 古い下書きを無期限に生き残らせない（先月分の選択が突然復活しないように7日で捨てる）
+        // 古い下書きを無期限に生き残らせない（先月分の選択が突然復活しないように7日で捨てる）。
+        // savedAt は v1 から拾ったときは v1 のものなので、移行分にも同じ7日が効く。
         if (Date.now() - savedAt > 7 * 24 * 60 * 60 * 1000) {
             safeLocal.removeItem(draftsKey);
+            if (legacyDraftsKey) safeLocal.removeItem(legacyDraftsKey);
             return;
         }
         // 表示中の月ぶんだけを state に載せる（画面に出ていない日は絶対に持ち込まない）
@@ -149,12 +168,22 @@ export const StaffShiftRequest = () => {
     useEffect(() => {
         // 復元が済んだ月ぶんだけを書き戻す（別の月の枠を上書きしない）
         if (!draftsKey || restoredMonth !== monthPrefix) return;
-        const { byMonth } = readDraftBlob();
+        const { byMonth, savedAt, fromLegacy } = readDraftBlob();
+        // 中身が変わっていないときは書かない。画面を開いた・月を送っただけで savedAt が
+        // 更新されると、7日で捨てるはずの古い下書きが延命されてしまう。
+        const unchanged = JSON.stringify(byMonth[monthPrefix] || {}) === JSON.stringify(draftRequests || {});
+        if (unchanged && !fromLegacy) return;
         if (countDrafts(draftRequests) > 0) byMonth[monthPrefix] = draftRequests;
         else delete byMonth[monthPrefix];
-        if (Object.keys(byMonth).length > 0) safeLocal.setJSON(draftsKey, { savedAt: Date.now(), byMonth });
-        else safeLocal.removeItem(draftsKey);
-    }, [draftRequests, draftsKey, restoredMonth, monthPrefix]);
+        // 移行分は元の savedAt を引き継ぐ（書き戻しのたびに7日の期限が延びて古い下書きが生き残るのを防ぐ）
+        const stamp = fromLegacy && savedAt ? savedAt : Date.now();
+        const persisted = Object.keys(byMonth).length > 0
+            ? safeLocal.setJSON(draftsKey, { savedAt: stamp, byMonth })
+            : (safeLocal.removeItem(draftsKey), true);
+        // v1 は **v2 へ書き戻せたことを確認してから** 消す（二重管理も、消してから失敗も作らない）。
+        // 保存できない端末（setJSON が false）では v1 を残し、次の機会に拾えるようにする。
+        if (persisted && legacyDraftsKey) safeLocal.removeItem(legacyDraftsKey);
+    }, [draftRequests, draftsKey, legacyDraftsKey, restoredMonth, monthPrefix]);
 
     /**
      * 役職（role）が未確定の間は絶対に取得しない。
