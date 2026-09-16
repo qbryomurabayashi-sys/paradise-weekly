@@ -4,12 +4,13 @@ import { useUsersStore } from '../store/useUsersStore';
 import { useShiftStore, Store, Staff, ShiftRequest, ShiftRequestType } from '../store/useShiftStore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isSameDay, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Calendar, Settings, Users, ChevronLeft, ChevronRight, Plus, X, AlertCircle, Megaphone, ChevronDown, Stars, CheckCircle, List } from 'lucide-react';
+import { Calendar, Settings, Users, ChevronLeft, ChevronRight, Plus, X, AlertCircle, Megaphone, ChevronDown, Stars, CheckCircle, List, FileText, Download, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import * as JapaneseHolidays from 'japanese-holidays';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
 import { MetricBar, DeltaBadge } from '../components/ui/Indicators';
+import { buildShiftRequestMarkdown } from '../lib/shiftRequestMarkdown';
 
 const isHoliday = (date: Date) => getDay(date) === 0 || JapaneseHolidays.isHoliday(date) !== undefined;
 
@@ -161,8 +162,21 @@ const AllRequestsView = ({ stores, staffs, requests, currentDate, setCurrentDate
     const { users } = useUsersStore();
     const [selectedStoreId, setSelectedStoreId] = useState<string>('all');
     const [sortMode, setSortMode] = useState<'staff' | 'submission_asc' | 'submission_desc' | 'date' | 'conflict'>('staff');
+    const [mdFile, setMdFile] = useState<{ url: string; name: string; count: number } | null>(null);
+    const [mdToast, setMdToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
     const activeRole = user?.role === 'BM' && viewMode ? viewMode : user?.role;
+    // MD出力はAM・BMのみ（表示制御だけに頼らず、実行時にも再チェックする）
+    const canExportMd = activeRole === 'BM' || activeRole === 'AM';
+
+    useEffect(() => {
+        if (!mdToast) return;
+        const t = setTimeout(() => setMdToast(null), 3200);
+        return () => clearTimeout(t);
+    }, [mdToast]);
+
+    // 生成物は差し替え・アンマウント時に必ず解放する（objectURLの取りこぼしを作らない）
+    useEffect(() => () => { if (mdFile) URL.revokeObjectURL(mdFile.url); }, [mdFile]);
     
     // Filter requests based on role and selected store
     const visibleRequests = requests.filter((r: any) => {
@@ -201,6 +215,40 @@ const AllRequestsView = ({ stores, staffs, requests, currentDate, setCurrentDate
     const getStoreName = (storeId: string) => {
         const store = stores.find((s:any) => s.id === storeId);
         return store ? store.name : '不明な店舗';
+    };
+
+    /**
+     * AM・BM限定：表示中の月・店舗絞り込みのままの希望休一覧をMarkdown（.md）で書き出す。
+     * 画面に出ている visibleRequests をそのまま渡す（画面と食い違うファイルを作らない）。
+     * 保存は生成と分けてユーザーの2回目のタップ（<a download>）で行う（iOSのblob保存対策）。
+     */
+    const handleExportMarkdown = () => {
+        if (!canExportMd) return;
+        if (visibleRequests.length === 0) {
+            setMdToast({ msg: 'この月に出力できる申請がありません。', type: 'error' });
+            return;
+        }
+        try {
+            const scopeLabel = selectedStoreId === 'all' ? '全店舗' : getStoreName(selectedStoreId);
+            const md = buildShiftRequestMarkdown({
+                monthLabel: format(currentDate, 'yyyy年M月', { locale: ja }),
+                scopeLabel,
+                requests: visibleRequests,
+                storeOrderIds: stores.map((s: any) => s.id),
+                getStoreName,
+                getStaffName,
+            });
+            const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+            setMdFile({
+                url: URL.createObjectURL(blob),
+                name: `希望休一覧_${format(currentDate, 'yyyy-MM')}_${scopeLabel}.md`,
+                count: visibleRequests.length,
+            });
+            setMdToast({ msg: `${visibleRequests.length}件のMDを作成しました。「保存」を押してください。`, type: 'success' });
+        } catch (e) {
+            console.error('Markdown export error:', e);
+            setMdToast({ msg: 'MDの作成に失敗しました。', type: 'error' });
+        }
     };
 
     // Prepare lists depending on sort mode
@@ -344,8 +392,54 @@ const AllRequestsView = ({ stores, staffs, requests, currentDate, setCurrentDate
                         <option value="submission_asc">申請順表示(早い順)</option>
                         <option value="conflict">希望休などのかぶり(対応順)</option>
                     </select>
+                    {canExportMd && (
+                        <button
+                            onClick={handleExportMarkdown}
+                            className="tap shrink-0 flex items-center justify-center gap-1.5 px-4 rounded-xl bg-qb-blue text-white text-sm font-bold shadow-sm active:scale-95 transition-all whitespace-nowrap"
+                        >
+                            <FileText size={16} /> MD出力
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {/* 生成したMDの保存カード：iOSでも確実に落とせるよう、保存はユーザーの2回目のタップ（<a download>）で行う */}
+            {mdFile && (
+                <div className="flex items-center gap-3 rounded-2xl bg-white border-2 border-qb-blue/30 shadow-md p-3">
+                    <span className="grid place-items-center h-10 w-10 shrink-0 rounded-xl bg-qb-blue/10 text-qb-blue">
+                        <FileText size={20} />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-black text-ink leading-snug">MDを作成しました（{mdFile.count}件）</p>
+                        <p className="text-xs font-bold text-ink-soft truncate">{mdFile.name}</p>
+                    </div>
+                    <a
+                        href={mdFile.url}
+                        download={mdFile.name}
+                        className="tap shrink-0 flex items-center justify-center gap-1.5 px-4 rounded-full bg-qb-blue text-white font-black text-sm shadow-sm active:scale-95 transition-all"
+                    >
+                        <Download size={16} /> 保存
+                    </a>
+                    <button
+                        onClick={() => setMdFile(null)}
+                        aria-label="閉じる"
+                        className="tap shrink-0 grid place-items-center rounded-full text-ink-soft hover:bg-black/5 transition-all"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+            )}
+
+            <AnimatePresence>
+                {mdToast && (
+                    <motion.div initial={{ opacity: 0, y: -24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }}
+                        className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl font-bold text-sm text-white max-w-[90vw]"
+                        style={{ background: mdToast.type === 'error' ? '#E60000' : '#17B26A' }}>
+                        {mdToast.type === 'error' ? <AlertCircle size={18} className="shrink-0" /> : <Check size={18} className="shrink-0" />}
+                        {mdToast.msg}
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {renderContent()}
         </div>
