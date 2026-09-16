@@ -11,8 +11,63 @@ import * as JapaneseHolidays from 'japanese-holidays';
 import { displayRole, formatStaffName } from '../lib/formatUtils';
 import { MetricBar, DeltaBadge } from '../components/ui/Indicators';
 import { buildShiftRequestMarkdown } from '../lib/shiftRequestMarkdown';
+import { withTimeout } from '../lib/withTimeout';
 
 const isHoliday = (date: Date) => getDay(date) === 0 || JapaneseHolidays.isHoliday(date) !== undefined;
+
+/**
+ * 書き込み1件あたりの締め切り。希望休かんたん登録（StaffShiftRequest）と同じ理由・同じ値。
+ * Firestore の setDoc/deleteDoc はサーバーackまで解決しないので、締め切りが無いと
+ * 圏外・回線切替で押したまま永久に無反応になる。
+ */
+const SAVE_TIMEOUT_MS = 90000;
+
+/** 失敗を「反応が遅い」と区別できない状態にしないための固定トースト（native alert は使わない） */
+type ResultToast = { type: 'success' | 'error'; text: string } | null;
+
+const ResultToastView = ({ toast, onClose }: { toast: ResultToast; onClose: () => void }) => {
+    useEffect(() => {
+        if (!toast) return;
+        // 成功は短く、失敗は読み切れるだけ長く出す
+        const t = setTimeout(onClose, toast.type === 'error' ? 12000 : 4000);
+        return () => clearTimeout(t);
+    }, [toast]);
+    if (!toast) return null;
+    return (
+        <div
+            role="status"
+            aria-live="polite"
+            onClick={onClose}
+            className={`fixed left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2rem)] max-w-md p-4 rounded-2xl shadow-xl flex items-start gap-3 font-bold text-base cursor-pointer
+                top-[calc(1rem+env(safe-area-inset-top))]
+                ${toast.type === 'error' ? 'bg-danger text-white' : 'bg-success text-white'}`}
+        >
+            {toast.type === 'error' ? <AlertCircle size={20} className="shrink-0" /> : <CheckCircle size={20} className="shrink-0" />}
+            <p className="flex-1 leading-relaxed">{toast.text}</p>
+        </div>
+    );
+};
+
+/**
+ * 書き込みの失敗を種類ごとに数える。
+ * permission-denied（権限が無い＝再送しても永久に直らない）を
+ * 「通信エラー、もう一度お試しください」に丸めると、利用者は永久に押し続けることになる。
+ */
+const classifyFailures = (reasons: any[]) => {
+    let denied = 0, unauthenticated = 0, timeout = 0, other = 0;
+    reasons.forEach(r => {
+        if (r?.name === 'TimeoutError') timeout++;
+        else if (r?.code === 'permission-denied') denied++;
+        else if (r?.code === 'unauthenticated') unauthenticated++;
+        else other++;
+    });
+    const notes: string[] = [];
+    if (denied > 0) notes.push(denied + '件は権限がないため保存できません（AM・BMに依頼してください）。');
+    if (unauthenticated > 0) notes.push('ログインの有効期限が切れました。アプリを再読込して再度ログインしてください。');
+    if (timeout > 0) notes.push(timeout + '件は保存を確認できませんでした（通信が遅い可能性があります）。もう一度実行しても二重登録にはなりません。');
+    if (other > 0) notes.push(other + '件は通信エラーで保存できませんでした。もう一度お試しください。');
+    return notes.join('');
+};
 
 export const ShiftDashboard = () => {
     const { user, viewMode, setViewMode } = useAuthStore();
@@ -519,22 +574,48 @@ const PendingApprovalsView = ({ stores, staffs, requests, currentDate, setCurren
         return acc;
     }, {});
 
-    const handleApproveAll = async (staffId: string) => {
+    const [toast, setToast] = useState<ResultToast>(null);
+    /** 処理中のスタッフID（連打と「押しても無反応」を防ぐ） */
+    const [busyStaffId, setBusyStaffId] = useState('');
+
+    /**
+     * 一括承認・一括却下。
+     * 以前は1件ずつ直列 await ＋ try/catch 無しだったため、
+     * 店長がAM登録の申請に当たると rules の update で permission-denied になり、
+     * **ループが途中で止まって以降の申請が全部黙って落ちていた**（画面には何も出ない）。
+     * 並列化＋件数の報告＋権限エラーと通信エラーの区別に揃える。
+     */
+    const handleBulk = async (staffId: string, status: 'approved' | 'rejected') => {
+        const label = status === 'approved' ? '承認' : '却下';
         const staffReqs = pendingRequests.filter((r:any) => r.staffId === staffId);
-        for (const req of staffReqs) {
-            await saveShiftRequest({ ...req, status: 'approved' });
+        if (staffReqs.length === 0) return;
+        setBusyStaffId(staffId);
+        try {
+            const results = await Promise.allSettled(
+                staffReqs.map((req:any) => withTimeout(saveShiftRequest({ ...req, status }), SAVE_TIMEOUT_MS, label))
+            );
+            const ok = results.filter(r => r.status === 'fulfilled').length;
+            const reasons = results.filter(r => r.status === 'rejected').map((r:any) => r.reason);
+            reasons.forEach(r => console.error('bulk ' + label + ' failed', staffId, r));
+            if (reasons.length === 0) {
+                setToast({ type: 'success', text: ok + '件を' + label + 'しました。' });
+            } else {
+                setToast({ type: 'error', text: (ok > 0 ? ok + '件を' + label + 'しました。' : '') + classifyFailures(reasons) });
+            }
+        } catch (e) {
+            console.error('bulk ' + label + ' error', e);
+            setToast({ type: 'error', text: label + '処理でエラーが発生しました。通信状況を確認して、もう一度お試しください。' });
+        } finally {
+            setBusyStaffId('');
         }
     };
 
-    const handleRejectAll = async (staffId: string) => {
-        const staffReqs = pendingRequests.filter((r:any) => r.staffId === staffId);
-        for (const req of staffReqs) {
-            await saveShiftRequest({ ...req, status: 'rejected' });
-        }
-    };
+    const handleApproveAll = (staffId: string) => handleBulk(staffId, 'approved');
+    const handleRejectAll = (staffId: string) => handleBulk(staffId, 'rejected');
 
     return (
         <div className="space-y-6">
+            <ResultToastView toast={toast} onClose={() => setToast(null)} />
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-gray-100 rounded-full transition">
@@ -589,15 +670,17 @@ const PendingApprovalsView = ({ stores, staffs, requests, currentDate, setCurren
                                 <div className="flex gap-2 pt-1">
                                     <button 
                                         onClick={() => handleRejectAll(staffId)}
-                                        className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-lg transition text-xs"
+                                        disabled={busyStaffId === staffId}
+                                        className="flex-1 min-h-[44px] bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-lg transition text-xs disabled:opacity-60"
                                     >
-                                        すべて却下
+                                        {busyStaffId === staffId ? '処理中…' : 'すべて却下'}
                                     </button>
                                     <button 
                                         onClick={() => handleApproveAll(staffId)}
-                                        className="flex-1 py-1.5 bg-paradise-ocean hover:bg-paradise-ocean/90 text-white font-bold rounded-lg transition text-xs"
+                                        disabled={busyStaffId === staffId}
+                                        className="flex-1 min-h-[44px] bg-paradise-ocean hover:bg-paradise-ocean/90 text-white font-bold rounded-lg transition text-xs disabled:opacity-60"
                                     >
-                                        すべて承認
+                                        {busyStaffId === staffId ? '処理中…' : 'すべて承認'}
                                     </button>
                                 </div>
                             </div>
@@ -927,6 +1010,11 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
     const [staffId, setStaffId] = useState('');
     const [type, setType] = useState<ShiftRequestType>('希望休');
     const [notes, setNotes] = useState('');
+    const [toast, setToast] = useState<ResultToast>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    /** 削除の確認。native confirm は使わない（規約：破壊操作はモーダルで確認） */
+    const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string } | null>(null);
+    const [deletingId, setDeletingId] = useState('');
 
     const isStaffAbsent = (staff: any) => {
         const req = requests.find((r:any) => r.staffId === staff.id && r.status !== 'rejected');
@@ -1029,8 +1117,16 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
     }, [staffId, allStaffs, monthRequests, date]);
 
     const handleSubmit = async () => {
-        if (!staffId) return;
-        
+        if (!staffId || isSaving) return;
+
+        // uid が無いまま送ると submittedBy が undefined になり、
+        // setDoc が「Unsupported field value: undefined」で失敗する＝押しても完全に無反応になる。
+        // さらに空・未設定の submittedBy は rules 上あとから本人が編集できない申請を作る。
+        if (!user?.uid) {
+            setToast({ type: 'error', text: 'ログイン状態を確認できませんでした。アプリを再読込してからもう一度お試しください。' });
+            return;
+        }
+
         let derivedStoreId = store?.id || '';
         if (staffId.startsWith('user_')) {
             // It's a user, they don't have a specific storeId in shift requests usually or maybe they do?
@@ -1038,7 +1134,15 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
             derivedStoreId = isAllStores ? 'unassigned' : store?.id || '';
         } else {
             const selectedStaff = staffs.find((s:any) => s.id === staffId);
-            derivedStoreId = isAllStores ? selectedStaff?.storeId : store.id;
+            // 以前は `store.id` を直接読んでいた。store（=currentStore）は
+            // 選択中の店舗が店舗マスタに見つからないとき null になり、そこで TypeError が出て
+            // 「追加」を押しても何も起きない（エラーも出ない）状態になっていた。
+            // storeId が決められないものを undefined のまま setDoc に渡さない。
+            derivedStoreId = (isAllStores ? selectedStaff?.storeId : store?.id) || '';
+        }
+        if (!derivedStoreId) {
+            setToast({ type: 'error', text: '対象の店舗を特定できませんでした。店舗を選び直してからもう一度お試しください。' });
+            return;
         }
 
         const requestData: any = {
@@ -1048,33 +1152,79 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
             date: dateStr,
             type,
             status: 'pending',
-            submittedBy: user?.uid,
+            submittedBy: user.uid,
             notes
         };
 
-        await onSave(requestData);
-        
-        setStaffId('');
-        setNotes('');
+        setIsSaving(true);
+        try {
+            // 締め切りが無いと、圏外・回線切替で押したまま永久に無反応になる
+            await withTimeout(onSave(requestData), SAVE_TIMEOUT_MS, '予定の追加');
+            setStaffId('');
+            setNotes('');
+            setToast({ type: 'success', text: '1件を追加しました。' });
+        } catch (e: any) {
+            // 以前は await が reject すると未処理の Promise 拒否になって消え、
+            // 利用者には「反応が遅い」と区別できなかった（入力欄が残るだけ）。
+            console.error('shift request add failed', e);
+            setToast({ type: 'error', text: classifyFailures([e]) || '追加できませんでした。もう一度お試しください。' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    /** 削除の実行（確認モーダルで承諾を得たあとに呼ぶ） */
+    const handleConfirmDelete = async () => {
+        if (!pendingDelete) return;
+        const target = pendingDelete;
+        setPendingDelete(null);
+        setDeletingId(target.id);
+        try {
+            // 以前は `onClick={() => onDelete(r.id)}` で await も catch もしておらず、
+            // 失敗しても行が消えないだけで何も表示されなかった。
+            await withTimeout(onDelete(target.id), SAVE_TIMEOUT_MS, '予定の削除');
+            setToast({ type: 'success', text: target.label + ' の予定を削除しました。' });
+        } catch (e: any) {
+            console.error('shift request delete failed', e);
+            setToast({ type: 'error', text: classifyFailures([e]) || '削除できませんでした。もう一度お試しください。' });
+        } finally {
+            setDeletingId('');
+        }
     };
 
     const handleSendAnnouncement = async () => {
+        // store（=currentStore）は選択中の店舗が店舗マスタに無いと null。
+        // 以前は store.name / user!.role を無防備に読んでいたため、
+        // その場合は押しても何も起きない（TypeError が出るだけ）状態だった。
+        if (!user?.uid || !user.role) {
+            setToast({ type: 'error', text: 'ログイン状態（権限）を確認できませんでした。アプリを再読込してからもう一度お試しください。' });
+            return;
+        }
+        if (!isAllStores && !store?.name) {
+            setToast({ type: 'error', text: '対象の店舗を特定できませんでした。店舗を選び直してからもう一度お試しください。' });
+            return;
+        }
         const formattedDate = format(date, 'M月d日(E)', { locale: ja });
         const targetName = isAllStores ? '全店舗（ブロック全体）' : store.name;
         const title = `【急募】${targetName}の ${formattedDate} シフト調整のお願い`;
         const content = `<p><strong>${targetName}</strong> にて、<strong>${formattedDate}</strong> の稼働スタッフが <strong>${Math.abs(deficiency)}名</strong> 不足しています。</p><p>希望休を取得されている方で、もし出勤可能な方がいらっしゃいましたら、ご協力をお願いいたします。</p>`;
         
-        await useAnnouncementStore.getState().addAnnouncement({
-            title,
-            content,
-            isImportant: true,
-            displayUntil: format(addDays(date, 1), "yyyy-MM-dd'T'HH:mm"),
-            authorId: user!.uid,
-            authorName: user!.name,
-            authorRole: user!.role
-        });
-        
-        onClose();
+        try {
+            await withTimeout(useAnnouncementStore.getState().addAnnouncement({
+                title,
+                content,
+                isImportant: true,
+                displayUntil: format(addDays(date, 1), "yyyy-MM-dd'T'HH:mm"),
+                authorId: user.uid,
+                authorName: user.name,
+                authorRole: user.role
+            }), SAVE_TIMEOUT_MS, 'お知らせの配信');
+            onClose();
+        } catch (e: any) {
+            // 失敗を黙って捨てると「送ったつもり」になる（announcements の create は BM/AM のみ）
+            console.error('shortage announcement failed', e);
+            setToast({ type: 'error', text: classifyFailures([e]) || 'お知らせを配信できませんでした。もう一度お試しください。' });
+        }
     };
 
     return (
@@ -1203,8 +1353,12 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
                     </div>
                     <div className="flex flex-col md:flex-row gap-2">
                         <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="備考（任意）" className="w-full min-h-[44px] px-3 rounded-xl border border-line focus:outline-none focus:ring-2 focus:ring-qb-cyan text-base text-ink" />
-                        <button onClick={handleSubmit} className="tap w-full md:w-auto px-5 bg-qb-blue text-white font-bold rounded-xl hover:brightness-105 active:scale-95 transition shadow-sm text-base whitespace-nowrap">
-                            追加
+                        <button
+                            onClick={handleSubmit}
+                            disabled={isSaving || !staffId}
+                            className="tap w-full md:w-auto px-5 bg-qb-blue text-white font-bold rounded-xl hover:brightness-105 active:scale-95 transition shadow-sm text-base whitespace-nowrap disabled:opacity-60"
+                        >
+                            {isSaving ? '追加中…' : '追加'}
                         </button>
                     </div>
                 </div>
@@ -1235,8 +1389,12 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
                                             {r.status === 'approved' && <span className="ml-1 text-xs bg-green-500 text-white px-1.5 py-0.5 rounded-full" title="承認済">済</span>}
                                             {r.status === 'rejected' && <span className="ml-1 text-xs bg-gray-500 text-white px-1.5 py-0.5 rounded-full" title="却下">却</span>}
                                         </div>
-                                        <button onClick={() => onDelete(r.id)} className="text-sm text-red-500 font-bold hover:underline">
-                                            削除
+                                        <button
+                                            onClick={() => setPendingDelete({ id: r.id, label: displayName + '（' + r.type + '）' })}
+                                            disabled={deletingId === r.id}
+                                            className="min-h-[44px] px-3 text-sm text-danger font-bold rounded-xl hover:bg-danger/5 active:scale-95 transition disabled:opacity-60"
+                                        >
+                                            {deletingId === r.id ? '削除中…' : '削除'}
                                         </button>
                                     </div>
                                 );
@@ -1245,6 +1403,32 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
                     )}
                 </div>
             </motion.div>
+
+            <ResultToastView toast={toast} onClose={() => setToast(null)} />
+
+            {/* 破壊操作の確認は native confirm ではなくモーダルで取る */}
+            {pendingDelete && (
+                <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-gray-900/50">
+                    <div className="bg-surface rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+                        <h4 className="text-lg font-black text-ink">この予定を削除しますか？</h4>
+                        <p className="text-base font-bold text-ink-soft leading-relaxed">{pendingDelete.label}</p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setPendingDelete(null)}
+                                className="tap flex-1 rounded-xl bg-canvas border border-line text-ink-soft font-black"
+                            >
+                                やめる
+                            </button>
+                            <button
+                                onClick={handleConfirmDelete}
+                                className="tap flex-1 rounded-xl bg-danger text-white font-black"
+                            >
+                                削除する
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

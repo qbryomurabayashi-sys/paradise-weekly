@@ -14,6 +14,27 @@ import { withTimeout } from '../lib/withTimeout';
 const FETCH_TIMEOUT_MS = 30000;
 const FETCH_TIMEOUT_MESSAGE = '時間内に読み込めませんでした。通信状況を確認して再読込してください。';
 
+/**
+ * 「どの条件で取得した申請データか」を表すキー。
+ *
+ * なぜ月だけでは足りないか：
+ * role が未確定（null）の間に取得すると、下の分岐はどれにも当たらず
+ * `where('submittedBy','==',uid)` ＝「自分が出した申請だけ」になる。
+ * それでも取得は成功するので、月だけを完了印にしていると
+ * role が確定したあとも「この月は読み込み済み」で再取得されず、
+ * **他人の申請が見えないまま**カレンダーを操作できてしまう。
+ * その状態で確定すると existing が見つからず新規扱いで setDoc され、
+ * doc ID が `staffId_date` 固定なので他人の申請を丸ごと置き換える。
+ *
+ * 変えているのは「読み込み済みの同一性判定」だけで、クエリ条件そのものは変えていない。
+ * storeId ではなく storeName を使うのは、storeId が storeName から一意に決まるうえ、
+ * 画面側で店舗マスタの解決ロジックを二重に持たずに同じキーを作れるため。
+ */
+export const shiftRequestsScopeKey = (
+  monthPrefix: string,
+  user?: { role?: string | null; storeName?: string; uid?: string }
+) => `${monthPrefix}|${user?.role || ''}|${user?.uid || ''}|${user?.storeName || ''}`;
+
 export interface Store {
   id: string;
   name: string;
@@ -78,7 +99,8 @@ interface ShiftStoreState {
   requestsError: string | null;
   /** 取得範囲が意図的に狭められたときの通知（画面に出して黙らせない） */
   shiftScopeNotice: string | null;
-  loadedRequestsMonth: string;
+  /** 取得済みデータのスコープキー（shiftRequestsScopeKey の値）。月だけでは足りない理由は同関数のコメント参照 */
+  loadedRequestsScope: string;
 
   initStores: (force?: boolean) => () => void;
   initStaffs: (force?: boolean) => () => void;
@@ -142,7 +164,7 @@ export const setShiftCacheUser = (uid: string) => {
     shiftRequests: [],
     storesLoaded: false,
     staffsLoaded: false,
-    loadedRequestsMonth: '',
+    loadedRequestsScope: '',
     storesError: null,
     staffsError: null,
     requestsError: null,
@@ -155,8 +177,8 @@ export const setShiftCacheUser = (uid: string) => {
 let _storesInflight: Promise<void> | null = null;
 let _staffsInflight: Promise<void> | null = null;
 let _requestsInflight: Promise<void> | null = null;
-/** in-flight 中の月。同じ月の要求だけを弾き、別の月は必ず走らせる */
-let _requestsInflightMonth: string = '';
+/** in-flight 中のスコープ。同じ条件の要求だけを弾き、条件が違う要求は必ず走らせる */
+let _requestsInflightScope: string = '';
 /** 要求の世代。最新世代の応答だけが state を更新できる（古い応答は破棄） */
 let _requestsSeq = 0;
 
@@ -173,7 +195,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
   staffsError: null,
   requestsError: null,
   shiftScopeNotice: null,
-  loadedRequestsMonth: '',
+  loadedRequestsScope: '',
 
   initStores: (force: boolean = false) => {
     if (!force && get().storesLoaded) return () => {};
@@ -275,16 +297,17 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
   },
 
   initShiftRequests: (monthPrefix: string, user?: {role: string, storeName?: string, uid: string}, force: boolean = false) => {
-    if (!force && get().loadedRequestsMonth === monthPrefix) return () => {};
+    const scopeKey = shiftRequestsScopeKey(monthPrefix, user);
+    if (!force && get().loadedRequestsScope === scopeKey) return () => {};
     // 完了フラグは「成功後」に立てる（失敗を読み込み済みにしないため）。
     // in-flight ガードは【同じ月】の二重フェッチだけを弾く。
     // 別の月の要求まで落とすと、月送り中の要求が消えて「読み込み中」で永久固着する。
-    if (!force && _requestsInflight && _requestsInflightMonth === monthPrefix) return () => {};
+    if (!force && _requestsInflight && _requestsInflightScope === scopeKey) return () => {};
 
     // 最新要求だけが state を書けるようにする（古い応答＝stale response は破棄）
     const seq = ++_requestsSeq;
     const isStale = () => seq !== _requestsSeq;
-    _requestsInflightMonth = monthPrefix;
+    _requestsInflightScope = scopeKey;
 
     set({ isLoading: true });
 
@@ -303,7 +326,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
           }
           if (!get().storesLoaded) {
             // 店舗マスタが取れていない＝絞り込み条件を決められない。クエリは投げない。
-            // loadedRequestsMonth は立てていないので、stores 復旧後に再試行される。
+            // loadedRequestsScope は立てていないので、stores 復旧後に再試行される。
             if (!isStale()) set({ isLoading: false });
             return;
           }
@@ -325,6 +348,9 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
           // BM accesses everything
         } else if (user && user.role === 'AM') {
           // AM normally accesses their area
+        // 【論点として残す】'スタッフ' は useAuthStore の User.role 型（店長/AM/BM/null）に無いが、
+        // 実データに存在する可能性があるためこの分岐は消さない。消すと最後の else に落ちて
+        // 「自分が出した申請だけ」になり、事故が静かに悪化する。型側に足すかは別途判断。
         } else if (user && (user.role === '店長' || user.role === 'スタッフ')) {
             const myStore = get().stores.find(s => s.name === user.storeName);
             if (myStore) {
@@ -346,7 +372,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
         // 古い月の応答で新しい月の state を上書きしない
         if (isStale()) return;
         // 成功してから「この月は読み込み済み」にする
-        set({ shiftRequests, isLoading: false, requestsError: null, loadedRequestsMonth: monthPrefix });
+        set({ shiftRequests, isLoading: false, requestsError: null, loadedRequestsScope: scopeKey });
 
         // ※ deduplicateShiftRequests / cleanupOldShiftRequests の呼び出しはここから外した。
         //   - 画面を開くたびに Firestore を消す（＝不可逆）処理を走らせるべきではない。
@@ -377,7 +403,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
               ? '申請データの検索設定（インデックス）が未作成のため読み込めませんでした。管理者に連絡してください。'
               : '申請データの読み込みに失敗しました'
         });
-        // 失敗した月は loadedRequestsMonth を立てていない＝再試行できる
+        // 失敗した月は loadedRequestsScope を立てていない＝再試行できる
       }
     };
     
@@ -385,7 +411,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
       // 自分が最新要求だったときだけ in-flight を解除する（新しい要求の目印を消さない）
       if (!isStale()) {
         _requestsInflight = null;
-        _requestsInflightMonth = '';
+        _requestsInflightScope = '';
       }
     });
     return () => {};

@@ -6,7 +6,13 @@ import { safeSession } from '../lib/safeStorage';
 
 interface User {
   name: string;
-  role: '店長' | 'AM' | 'BM';
+  /**
+   * users/{uid} を取れるまでは **null（未確定）**。
+   * 型で嘘をつくと呼び出し側が「必ず役職がある」前提で分岐し、
+   * 未確定のまま取得スコープを決めて他人のデータを読み書きする事故になるので、
+   * null を型に出して無視できないようにしている。
+   */
+  role: '店長' | 'AM' | 'BM' | null;
   storeName: string;
   uid: string;
   photoURL?: string;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useShiftStore, ShiftRequestType } from '../store/useShiftStore';
+import { useShiftStore, ShiftRequestType, shiftRequestsScopeKey } from '../store/useShiftStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { format, startOfMonth, addMonths, subMonths, eachDayOfInterval, endOfMonth, getDay, isSameDay } from 'date-fns';
@@ -36,8 +36,8 @@ const LoadFailureNotice = ({ message, onRetry, retrying }: { message: string; on
 );
 
 export const StaffShiftRequest = () => {
-    const { user } = useAuthStore();
-    const { stores, staffs, shiftRequests, storesLoaded, staffsLoaded, storesError, staffsError, requestsError, shiftScopeNotice, loadedRequestsMonth, isLoading, initStores, initStaffs, initShiftRequests, saveShiftRequest, deleteShiftRequest } = useShiftStore();
+    const { user, profileError } = useAuthStore();
+    const { stores, staffs, shiftRequests, storesLoaded, staffsLoaded, storesError, staffsError, requestsError, shiftScopeNotice, loadedRequestsScope, isLoading, initStores, initStaffs, initShiftRequests, saveShiftRequest, deleteShiftRequest } = useShiftStore();
     const { addAnnouncement } = useAnnouncementStore();
     const [currentDate, setCurrentDate] = useState(addMonths(new Date(), 1));
     
@@ -74,39 +74,111 @@ export const StaffShiftRequest = () => {
      * iPhoneは背景のタブを容赦なく破棄するので、カレンダーをタップした状態で
      * 電話・アプリ切替・画面ロックが入るとReactのstateごと消え、本人は「入れたのに無くなった」になる。
      * 保存するのは店舗ID/日付/種別だけで、氏名などの個人情報は入れない。
+     *
+     * 【月ごとに分ける理由】以前は全月ぶんを1つの塊で持ち、復元も確定もそれを丸ごと扱っていた。
+     * `existing` の照合先 shiftRequests には表示中の月しか入っていないので、
+     * 別月の下書きは常に「新規」扱いになり、doc ID が `staffId_date` 固定のまま
+     * setDoc されて他人の申請を丸ごと置き換えていた（カレンダーには何も出ていないのに
+     * 「未申請の項目があります」だけ点滅する状態）。表示している月だけを扱う。
      */
-    const draftsKey = user?.uid ? `qb_kanri_shift_drafts_v1_${user.uid}` : '';
-    const [restoredDrafts, setRestoredDrafts] = useState(false);
+    const monthPrefix = format(currentDate, 'yyyy-MM');
+    type DraftMap = Record<string, Record<string, ShiftRequestType | null>>;
+    const draftsKey = user?.uid ? `qb_kanri_shift_drafts_v2_${user.uid}` : '';
+    /** どの月まで復元したか。月を送ったら必ずその月ぶんを読み直す */
+    const [restoredMonth, setRestoredMonth] = useState('');
+    /** 表示していない月に残っている下書き（勝手に消さない・勝手に送らない。件数と月を出すだけ） */
+    const [otherMonthDrafts, setOtherMonthDrafts] = useState<Array<{ month: string; count: number }>>([]);
+
+    /** 保存形式を読む。v1（月で分かれていない平坦な形）は日付から月に振り分けて受け入れる */
+    const readDraftBlob = (): { savedAt?: number; byMonth: Record<string, DraftMap> } => {
+        const saved = safeLocal.getJSON<{ savedAt?: number; byMonth?: any; drafts?: any }>(draftsKey, {});
+        const byMonth: Record<string, DraftMap> = {};
+        if (saved.byMonth && typeof saved.byMonth === 'object') {
+            Object.entries(saved.byMonth).forEach(([m, d]) => {
+                if (d && typeof d === 'object') byMonth[m] = d as DraftMap;
+            });
+        } else if (saved.drafts && typeof saved.drafts === 'object') {
+            // v1 からの移行（捨てずに月ごとへ振り分ける）
+            Object.entries(saved.drafts as DraftMap).forEach(([sid, dates]) => {
+                Object.entries(dates || {}).forEach(([dStr, t]) => {
+                    const m = dStr.slice(0, 7);
+                    if (!byMonth[m]) byMonth[m] = {};
+                    if (!byMonth[m][sid]) byMonth[m][sid] = {};
+                    byMonth[m][sid][dStr] = t;
+                });
+            });
+        }
+        return { savedAt: saved.savedAt, byMonth };
+    };
+
+    const countDrafts = (d: DraftMap) => Object.values(d || {}).reduce((n, dates) => n + Object.keys(dates || {}).length, 0);
 
     useEffect(() => {
-        if (!draftsKey || restoredDrafts) return;
-        const saved = safeLocal.getJSON<{ savedAt?: number; drafts?: any }>(draftsKey, {});
-        setRestoredDrafts(true);
-        if (!saved.savedAt || !saved.drafts) return;
+        if (!draftsKey || restoredMonth === monthPrefix) return;
+        const { savedAt, byMonth } = readDraftBlob();
+        setRestoredMonth(monthPrefix);
+        setDraftRequests({});
+        setOtherMonthDrafts([]);
+        if (!savedAt) return;
         // 古い下書きを無期限に生き残らせない（先月分の選択が突然復活しないように7日で捨てる）
-        if (Date.now() - saved.savedAt > 7 * 24 * 60 * 60 * 1000) {
+        if (Date.now() - savedAt > 7 * 24 * 60 * 60 * 1000) {
             safeLocal.removeItem(draftsKey);
             return;
         }
-        if (typeof saved.drafts !== 'object' || Object.keys(saved.drafts).length === 0) return;
-        setDraftRequests(saved.drafts);
-        setStatusMessage({ type: 'success', text: '前回の未申請の選択を復元しました。内容を確認して確定してください。' });
-    }, [draftsKey, restoredDrafts]);
+        // 表示中の月ぶんだけを state に載せる（画面に出ていない日は絶対に持ち込まない）
+        const mine = byMonth[monthPrefix] || {};
+        const filtered: DraftMap = {};
+        Object.entries(mine).forEach(([sid, dates]) => {
+            const remain: Record<string, ShiftRequestType | null> = {};
+            Object.entries(dates || {}).forEach(([dStr, t]) => {
+                if (dStr.startsWith(monthPrefix)) remain[dStr] = t;
+            });
+            if (Object.keys(remain).length > 0) filtered[sid] = remain;
+        });
+        if (countDrafts(filtered) > 0) {
+            setDraftRequests(filtered);
+            setStatusMessage({ type: 'success', text: '前回の未申請の選択を復元しました。内容を確認して確定してください。' });
+        }
+        const others = Object.entries(byMonth)
+            .filter(([m]) => m !== monthPrefix)
+            .map(([m, d]) => ({ month: m, count: countDrafts(d) }))
+            .filter(o => o.count > 0);
+        setOtherMonthDrafts(others);
+    }, [draftsKey, restoredMonth, monthPrefix]);
 
     useEffect(() => {
-        if (!draftsKey || !restoredDrafts) return;
-        const hasDrafts = Object.keys(draftRequests).some(sid => Object.keys(draftRequests[sid] || {}).length > 0);
-        if (hasDrafts) safeLocal.setJSON(draftsKey, { savedAt: Date.now(), drafts: draftRequests });
+        // 復元が済んだ月ぶんだけを書き戻す（別の月の枠を上書きしない）
+        if (!draftsKey || restoredMonth !== monthPrefix) return;
+        const { byMonth } = readDraftBlob();
+        if (countDrafts(draftRequests) > 0) byMonth[monthPrefix] = draftRequests;
+        else delete byMonth[monthPrefix];
+        if (Object.keys(byMonth).length > 0) safeLocal.setJSON(draftsKey, { savedAt: Date.now(), byMonth });
         else safeLocal.removeItem(draftsKey);
-    }, [draftRequests, draftsKey, restoredDrafts]);
+    }, [draftRequests, draftsKey, restoredMonth, monthPrefix]);
 
+    /**
+     * 役職（role）が未確定の間は絶対に取得しない。
+     * useAuthStore は iPhone の沈黙対策で users/{uid} を待たずに role: null で認証を通すため、
+     * ここで投げると useShiftStore の分岐がどれにも当たらず
+     * 「自分が出した申請だけ」を取得して成功扱いになり、他人の申請が見えないまま
+     * 確定できてしまう（＝他人の申請を setDoc で丸ごと置き換える）。
+     */
+    const isRolePending = !user?.role && !profileError;
     useEffect(() => {
         // 店舗マスタが揃うまで投げない（権限分岐が stores 依存なので、黙って別範囲を取るのを防ぐ）
         if (!storesLoaded) return;
-        const prefix = format(currentDate, 'yyyy-MM');
-        const unsub = initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined);
+        if (!user?.role) return;
+        const unsub = initShiftRequests(monthPrefix, {role: user.role, storeName: user.storeName, uid: user.uid});
         return () => unsub();
-    }, [currentDate, user?.uid, user?.role, storesLoaded]);
+    }, [monthPrefix, user?.uid, user?.role, user?.storeName, storesLoaded]);
+
+    /**
+     * 提出後の再取得を「送信を始めた時点の月」ではなく**最新の表示月**に対して行うための参照。
+     * クロージャに閉じ込めた古い currentDate で再取得すると、送信中に月を送った場合に
+     * 後勝ちで loadedRequestsScope が旧月に戻り、表示は新月なので永久に「読み込み中」になる。
+     */
+    const currentDateRef = React.useRef(currentDate);
+    useEffect(() => { currentDateRef.current = currentDate; }, [currentDate]);
 
     useEffect(() => {
         if (user && stores.length > 0) {
@@ -135,9 +207,11 @@ export const StaffShiftRequest = () => {
     const isStoresPending = storesState === 'loading';
     const isStaffsPending = staffsState === 'loading';
 
-    // 既存申請が届く前のタップは「他人の申請を上書きする」不可逆事故になるので受け付けない
-    const monthPrefix = format(currentDate, 'yyyy-MM');
-    const isRequestsReady = loadedRequestsMonth === monthPrefix;
+    // 既存申請が届く前のタップは「他人の申請を上書きする」不可逆事故になるので受け付けない。
+    // 判定は月だけでなく「どの権限・どの店舗の条件で取得したか」まで一致していること
+    // （role 未確定のまま取った自分ぶんだけのデータを「読み込み済み」にしない）
+    const isRequestsReady = !!user?.role
+        && loadedRequestsScope === shiftRequestsScopeKey(monthPrefix, { role: user.role, storeName: user.storeName, uid: user.uid });
     // キャッシュだけで表示している状態（requiredStaffing・定休日が古い可能性がある）。
     // この状態で確定させると誤った不足人数のお知らせが全社配信されるため、申請は止める。
     const isStoresStale = !storesLoaded && stores.length > 0;
@@ -295,9 +369,21 @@ export const StaffShiftRequest = () => {
     const hasAnyChanges = Object.keys(draftRequests).some(sid => Object.keys(draftRequests[sid]).length > 0);
 
     const handleSubmitAll = async () => {
+        // 【表示中の月だけを送る】画面に出ていない日付は書き込まない。
+        // existing の照合先 shiftRequests は表示中の月しか持っていないので、
+        // 別月の下書きを送ると必ず「新規」扱いになり他人の申請を上書きする。
+        const monthDrafts: Record<string, Record<string, ShiftRequestType | null>> = {};
+        Object.entries(draftRequests).forEach(([sid, dates]) => {
+            const remain: Record<string, ShiftRequestType | null> = {};
+            Object.entries(dates || {}).forEach(([dStr, t]) => {
+                if (dStr.startsWith(monthPrefix)) remain[dStr] = t;
+            });
+            if (Object.keys(remain).length > 0) monthDrafts[sid] = remain;
+        });
+
         // Validation: loop through drafts to see if any staff exceeds limit without approval
         let overLimitStaffName = "";
-        for (const [staffId, drafts] of Object.entries(draftRequests)) {
+        for (const [staffId, drafts] of Object.entries(monthDrafts)) {
             let count = 0;
             // Existing requests
             const existing = shiftRequests.filter(r => r.staffId === staffId);
@@ -336,6 +422,14 @@ export const StaffShiftRequest = () => {
         }
         const uid = user.uid;
 
+        // 【送信前チェック1.5】役職が未確定のままでは送らない。
+        // role が null の間は取得スコープが「自分が出した申請だけ」に落ちており、
+        // 他人の申請が手元に無い＝上書き事故になる（確定ボタンも塞いでいるが二重に守る）。
+        if (!user.role) {
+            setStatusMessage({ type: 'error', text: '権限（役職）を確認中です。少し待ってからもう一度お試しください。' });
+            return;
+        }
+
         // 【送信前チェック2】オフラインなら1件も投げない。
         // Firestore の setDoc/deleteDoc の Promise は、永続キャッシュに書けても
         // サーバーの ack が返るまで解決しないので、オフラインで投げると
@@ -365,13 +459,16 @@ export const StaffShiftRequest = () => {
         let failedCount = 0;
         // タイムアウトした件数（＝保存できたか確認できなかった件数）。失敗と断定せず文言を分ける
         let unconfirmedCount = 0;
+        // 再送しても直らない失敗。通信エラーに丸めず、対処を分けて伝える
+        let deniedCount = 0;
+        let unauthenticatedCount = 0;
         // 「他の人が登録した申請なので触れない」失敗は原因も対処も違うので分けて報告する
         const lockedDates: string[] = [];
         // 実際に書き込む操作だけを積む（何もしなくていいものは往復させない）
         const ops: Array<{ staffId: string; dateStr: string; type: ShiftRequestType | null; existing?: any; sStoreId: string }> = [];
 
         // Save requests
-        for (const [staffId, drafts] of Object.entries(draftRequests)) {
+        for (const [staffId, drafts] of Object.entries(monthDrafts)) {
             const sStoreId = staffs.find(s => s.id === staffId)?.storeId || selectedStoreId;
             for (const [dateStr, type] of Object.entries(drafts)) {
                 const existing = shiftRequests.find(r => r.staffId === staffId && r.date === dateStr);
@@ -420,6 +517,9 @@ export const StaffShiftRequest = () => {
         // 残りが丸ごと消える。実際に9/15の記録は50秒間隔で3件だけ入って止まっていた。
         // 往復を重ねずまとめて投げる（1件あたりの遅さは変わらないが、全体は1回分の待ち時間で終わる）。
         const CHUNK = 10;
+        // 進捗は「1件終わるごと」に進める。チャンク完了時にしか更新しないと
+        // 10件以下（＝大半のケース）では一度も件数が出ず、進捗の意味が無くなる。
+        let doneCount = 0;
         for (let i = 0; i < ops.length; i += CHUNK) {
             const chunk = ops.slice(i, i + CHUNK);
             const results = await Promise.allSettled(chunk.map((op) => {
@@ -441,7 +541,10 @@ export const StaffShiftRequest = () => {
                 // 1件ずつ締め切りを切る。締め切りが無いと、圏外・回線切替で
                 // Promise が永久に解決せず「送信中…」のまま操作不能になる。
                 // 実測で1件56秒かかる回線があるため 90秒。短くすると正常な遅い回線を失敗扱いにしてしまう。
-                return withTimeout(write, SAVE_TIMEOUT_MS, '申請の保存');
+                return withTimeout(write, SAVE_TIMEOUT_MS, '申請の保存').finally(() => {
+                    doneCount = Math.min(doneCount + 1, ops.length);
+                    setSubmitProgress({ done: doneCount, total: ops.length });
+                });
             }));
             results.forEach((res, idx) => {
                 const op = chunk[idx];
@@ -449,14 +552,20 @@ export const StaffShiftRequest = () => {
                     savedKeys.push({ staffId: op.staffId, dateStr: op.dateStr });
                 } else {
                     failedCount++;
-                    // タイムアウトは「失敗」と断定できない（裏で書き込みが続いて成功しうる）。
-                    // savedKeys に入れない＝下書きを残して再送できるようにし、文言も断定しない。
-                    if ((res.reason as any)?.name === 'TimeoutError') unconfirmedCount++;
+                    const reason: any = res.reason;
+                    // 失敗の種類を混ぜない。再送で直らないものに再送を促すと永久に押させることになる。
+                    if (reason?.name === 'TimeoutError') {
+                        // タイムアウトは「失敗」と断定できない（裏で書き込みが続いて成功しうる）。
+                        // savedKeys に入れない＝下書きを残して再送できるようにし、文言も断定しない。
+                        unconfirmedCount++;
+                    } else if (reason?.code === 'permission-denied') {
+                        deniedCount++;
+                    } else if (reason?.code === 'unauthenticated') {
+                        unauthenticatedCount++;
+                    }
                     console.error('Shift request save failed', { staffId: op.staffId, dateStr: op.dateStr, type: op.type }, res.reason);
                 }
             });
-            // 遅い回線でも進んでいることが見えるようにする（無言の「処理中...」で放置させない）
-            setSubmitProgress({ done: Math.min(i + CHUNK, ops.length), total: ops.length });
         }
         setSubmitProgress(null);
 
@@ -476,9 +585,12 @@ export const StaffShiftRequest = () => {
             });
         }
 
-        // Force a re-fetch of shift requests from Firestore to be 100% sure we are in sync
-        const prefix = format(currentDate, 'yyyy-MM');
-        initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true);
+        // Force a re-fetch of shift requests from Firestore to be 100% sure we are in sync。
+        // 【最新の表示月に対して行う】送信中に月を送られていた場合、
+        // 送信開始時点の currentDate で再取得すると後勝ちで loadedRequestsScope が旧月に戻り、
+        // 表示は新月なのでカレンダーが永久に「予定を読み込み中…」で固着する。
+        const prefix = format(currentDateRef.current, 'yyyy-MM');
+        initShiftRequests(prefix, {role: user.role, storeName: user.storeName, uid: uid}, true);
 
         // タイムアウトした分は「失敗」と断定できない（裏で書き込みが成立しうる）。
         // doc ID は `staffId_date` 固定なので、同じ日付・同じ種別で再送しても二重登録にはならない。
@@ -486,8 +598,16 @@ export const StaffShiftRequest = () => {
         const unconfirmedNote = unconfirmedCount > 0
             ? unconfirmedCount + '件は保存を確認できませんでした（通信が遅い可能性があります）。もう一度確定しても二重登録にはなりません。'
             : '';
-        const failedNote = failedCount - unconfirmedCount > 0
-            ? (failedCount - unconfirmedCount) + '件は通信エラーで保存できませんでした。'
+        // permission-denied / unauthenticated は再送しても永久に直らないので通信エラーに丸めない
+        const deniedNote = deniedCount > 0
+            ? deniedCount + '件は権限がないため保存できませんでした（AM・BMに依頼してください）。'
+            : '';
+        const unauthNote = unauthenticatedCount > 0
+            ? 'ログインの有効期限が切れました。アプリを再読込して再度ログインしてください。'
+            : '';
+        const networkFailed = failedCount - unconfirmedCount - deniedCount - unauthenticatedCount;
+        const failedNote = networkFailed > 0
+            ? networkFailed + '件は通信エラーで保存できませんでした。'
             : '';
 
         if (lockedDates.length > 0) {
@@ -498,14 +618,17 @@ export const StaffShiftRequest = () => {
                     + lockedDates.join('・') + ' は他の人が登録した、または登録者が記録されていない申請のため変更できません。'
                     + 'この日はAM・BMに変更を依頼してください。'
                     + (failedNote ? 'さらに' + failedNote : '')
-                    + unconfirmedNote
+                    + deniedNote + unauthNote + unconfirmedNote
             });
         } else if (failedCount > 0) {
             setStatusMessage({
                 type: 'error',
                 text: (savedKeys.length > 0 ? savedKeys.length + '件を申請しました。' : '')
+                    + deniedNote
+                    + unauthNote
                     + failedNote
                     + unconfirmedNote
+                    // 再送で直る見込みがあるのは通信エラーだけ。権限拒否・失効に再送を促さない
                     + (failedNote ? '残っている分をもう一度確定してください。' : '')
             });
         } else {
@@ -591,7 +714,7 @@ export const StaffShiftRequest = () => {
     const getStaffDraftCount = (sId: string) => Object.keys(draftRequests[sId] || {}).length;
 
     return (
-        <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
+        <div className="max-w-xl mx-auto px-4 pt-8 space-y-6 pb-[calc(8rem+env(safe-area-inset-bottom))]">
             <h1 className="text-xl font-black text-ink tracking-wide flex items-center gap-2">
                 <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-qb-blue to-qb-cyan flex items-center justify-center shrink-0">
                     <Calendar size={22} className="text-white"/>
@@ -613,6 +736,34 @@ export const StaffShiftRequest = () => {
                 >
                     {statusMessage.type === 'error' ? <AlertTriangle size={20} className="shrink-0"/> : <CheckCircle size={20} className="shrink-0"/>}
                     <p className="flex-1 leading-relaxed">{statusMessage.text}</p>
+                </div>
+            )}
+
+            {isRolePending && (
+                <div className="p-4 rounded-2xl flex items-start gap-3 bg-qb-yellow/15 text-ink">
+                    <RefreshCw size={20} className="shrink-0 text-qb-blue animate-spin" />
+                    <p className="text-sm font-bold leading-relaxed">
+                        権限（役職）を確認中です。確認できるまで申請の登録はできません（誤って他の人の申請を上書きしないためです）。
+                    </p>
+                </div>
+            )}
+
+            {profileError && !user?.role && (
+                <div className="bg-danger/10 border border-danger/20 rounded-xl p-3 flex items-start gap-3">
+                    <AlertCircle size={18} className="text-danger shrink-0 mt-0.5" />
+                    <p className="flex-1 text-sm font-bold text-danger leading-relaxed">
+                        権限（役職）を取得できませんでした。画面上部の「再読み込み」で権限を取り直してください。取得できるまで申請はできません。
+                    </p>
+                </div>
+            )}
+
+            {otherMonthDrafts.length > 0 && (
+                <div className="p-4 rounded-2xl flex items-start gap-3 bg-qb-yellow/15 text-ink">
+                    <Info size={20} className="shrink-0 text-qb-blue" />
+                    <p className="text-sm font-bold leading-relaxed">
+                        {otherMonthDrafts.map(o => `${Number(o.month.slice(5, 7))}月に未申請 ${o.count}件`).join('、')}
+                        があります。その月に切り替えて確定してください（この画面では表示中の月だけを申請します）。
+                    </p>
                 </div>
             )}
 
@@ -696,13 +847,23 @@ export const StaffShiftRequest = () => {
             {selectedStaffId ? (
                 <div className="bg-surface p-5 rounded-3xl shadow-sm border border-line space-y-6 relative overflow-hidden">
                     <div className="flex justify-between items-center relative z-10">
-                        <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="tap hover:bg-canvas rounded-full transition flex items-center justify-center text-ink-soft">
+                        {/* 送信中は月を動かせない。月が変わると提出後の再取得と取得スコープが食い違い、
+                            カレンダーが永久に「予定を読み込み中…」で固着する */}
+                        <button
+                            onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                            disabled={isSubmitting}
+                            className="tap hover:bg-canvas rounded-full transition flex items-center justify-center text-ink-soft disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
                             <ChevronLeft size={20} />
                         </button>
                         <h2 className="text-lg font-black text-ink tracking-wide tabular">
                             {format(currentDate, 'yyyy年 M月', { locale: ja })}
                         </h2>
-                        <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="tap hover:bg-canvas rounded-full transition flex items-center justify-center text-ink-soft">
+                        <button
+                            onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                            disabled={isSubmitting}
+                            className="tap hover:bg-canvas rounded-full transition flex items-center justify-center text-ink-soft disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
                             <ChevronRight size={20} />
                         </button>
                     </div>
@@ -742,7 +903,11 @@ export const StaffShiftRequest = () => {
                                 disabled={!isRequestsReady}
                                 className="tap w-full bg-qb-blue/5 text-qb-blue text-base font-black rounded-xl border-2 border-qb-blue/20 hover:bg-qb-blue/10 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                             >
-                                {isRequestsReady ? '「今月は希望休なし」として一括送信リストに追加' : storesError ? '店舗情報の再読込が必要です' : '予定を読み込み中…'}
+                                {isRequestsReady ? '「今月は希望休なし」として一括送信リストに追加'
+                                    : isRolePending ? '権限（役職）を確認中…'
+                                    : (profileError && !user?.role) ? '権限（役職）を取得できません'
+                                    : storesError ? '店舗情報の再読込が必要です'
+                                    : '予定を読み込み中…'}
                             </button>
                         </div>
 
@@ -756,7 +921,13 @@ export const StaffShiftRequest = () => {
                             その場合は嘘の「読み込み中」を出さず、原因と再読込を出す */}
                         {!isRequestsReady && (
                             <div className="absolute inset-0 z-20 bg-surface/85 rounded-xl flex items-center justify-center p-3">
-                                {storesError ? (
+                                {isRolePending || (profileError && !user?.role) ? (
+                                    <div className="bg-surface border border-line shadow-sm rounded-xl p-3 flex flex-col items-center gap-2 max-w-full">
+                                        <p className="text-sm font-bold text-ink text-center leading-relaxed">
+                                            {profileError ? '権限（役職）を取得できませんでした' : '権限（役職）を確認中…'}
+                                        </p>
+                                    </div>
+                                ) : storesError ? (
                                     <div className="bg-surface border border-danger/20 shadow-sm rounded-xl p-3 flex flex-col items-center gap-2 max-w-full">
                                         <p className="text-sm font-bold text-danger text-center leading-relaxed">
                                             予定を読み込めていません（店舗情報が取得できていないため）
@@ -929,15 +1100,17 @@ export const StaffShiftRequest = () => {
                     )}
                     <button
                         onClick={handleSubmitAll}
-                        disabled={!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded}
+                        disabled={!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded || !user?.role}
                         className={`flex-1 min-h-[52px] py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-md
-                            ${!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded
+                            ${!hasAnyChanges || isSubmitting || !isRequestsReady || !storesLoaded || !user?.role
                                 ? 'bg-canvas text-qb-gray cursor-not-allowed shadow-none'
                                 : 'bg-gradient-to-r from-qb-blue to-qb-cyan text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
                             }
                         `}
                     >
-                        {!storesLoaded ? '店舗情報の再読込が必要です'
+                        {isRolePending ? '権限（役職）を確認中…'
+                            : (profileError && !user?.role) ? '権限（役職）を取得できません'
+                            : !storesLoaded ? '店舗情報の再読込が必要です'
                             : !isRequestsReady ? '予定を読み込み中…'
                             : isSubmitting ? (submitProgress ? `送信中… ${submitProgress.done}/${submitProgress.total}件` : '送信中…')
                             : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}

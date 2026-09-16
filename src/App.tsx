@@ -545,8 +545,11 @@ export default function App() {
           {/* 背景は index.css の静的ブランドグラデーションに一本化（常時発光blobは廃止：LESS IS MORE） */}
 
           {updateAvailable && (
-            <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-qb-blue/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
+            /* 外側の枠は max-w-sm(384px)＝iPhoneの画面幅とほぼ同じで、透明でも画面最下部の
+               タップを丸ごと吸ってしまう（希望休の確定ボタンが「押しても無反応」になる）。
+               枠は pointer-events-none にして、中のカードだけタップを受ける。 */
+            <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4 pointer-events-none">
+              <div className="pointer-events-auto bg-white/90 backdrop-blur-xl border-2 border-qb-blue/50 shadow-2xl p-4 rounded-3xl flex items-center justify-between gap-4">
                 <div className="flex-1">
                   <p className="text-sm font-black text-gray-800">新しいバージョンがあります</p>
                   <p className="text-xs font-bold text-ink-soft mt-0.5">最新の機能を使用するには更新してください</p>
