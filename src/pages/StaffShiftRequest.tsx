@@ -7,6 +7,7 @@ import { ja } from 'date-fns/locale';
 import { Calendar, ChevronLeft, ChevronRight, CheckCircle, User as UserIcon, Store as StoreIcon, AlertTriangle, AlertCircle, RefreshCw, Info } from 'lucide-react';
 import * as JapaneseHolidays from 'japanese-holidays';
 import { formatStaffName } from '../lib/formatUtils';
+import { safeLocal } from '../lib/safeStorage';
 
 const isHoliday = (date: Date) => getDay(date) === 0 || JapaneseHolidays.isHoliday(date) !== undefined;
 
@@ -50,6 +51,44 @@ export const StaffShiftRequest = () => {
             unsubStaffs();
         };
     }, []);
+
+    // 成功は短く、失敗は読み切れるだけ長く出す（失敗を見落とさせない）
+    useEffect(() => {
+        if (!statusMessage) return;
+        const t = setTimeout(() => setStatusMessage(null), statusMessage.type === 'error' ? 12000 : 4000);
+        return () => clearTimeout(t);
+    }, [statusMessage]);
+
+    /**
+     * 未申請の選択（下書き）を端末に保存する。
+     * iPhoneは背景のタブを容赦なく破棄するので、カレンダーをタップした状態で
+     * 電話・アプリ切替・画面ロックが入るとReactのstateごと消え、本人は「入れたのに無くなった」になる。
+     * 保存するのは店舗ID/日付/種別だけで、氏名などの個人情報は入れない。
+     */
+    const draftsKey = user?.uid ? `qb_kanri_shift_drafts_v1_${user.uid}` : '';
+    const [restoredDrafts, setRestoredDrafts] = useState(false);
+
+    useEffect(() => {
+        if (!draftsKey || restoredDrafts) return;
+        const saved = safeLocal.getJSON<{ savedAt?: number; drafts?: any }>(draftsKey, {});
+        setRestoredDrafts(true);
+        if (!saved.savedAt || !saved.drafts) return;
+        // 古い下書きを無期限に生き残らせない（先月分の選択が突然復活しないように7日で捨てる）
+        if (Date.now() - saved.savedAt > 7 * 24 * 60 * 60 * 1000) {
+            safeLocal.removeItem(draftsKey);
+            return;
+        }
+        if (typeof saved.drafts !== 'object' || Object.keys(saved.drafts).length === 0) return;
+        setDraftRequests(saved.drafts);
+        setStatusMessage({ type: 'success', text: '前回の未申請の選択を復元しました。内容を確認して確定してください。' });
+    }, [draftsKey, restoredDrafts]);
+
+    useEffect(() => {
+        if (!draftsKey || !restoredDrafts) return;
+        const hasDrafts = Object.keys(draftRequests).some(sid => Object.keys(draftRequests[sid] || {}).length > 0);
+        if (hasDrafts) safeLocal.setJSON(draftsKey, { savedAt: Date.now(), drafts: draftRequests });
+        else safeLocal.removeItem(draftsKey);
+    }, [draftRequests, draftsKey, restoredDrafts]);
 
     useEffect(() => {
         // 店舗マスタが揃うまで投げない（権限分岐が stores 依存なので、黙って別範囲を取るのを防ぐ）
@@ -274,25 +313,124 @@ export const StaffShiftRequest = () => {
         }
 
         setIsSubmitting(true);
-        try {
-            // Check for negative slots to send announcements
-            const updatedDates = new Set<string>();
-            Object.entries(draftRequests).forEach(([sid, drafts]) => {
-                Object.keys(drafts).forEach(d => updatedDates.add(d));
-            });
 
-            // For each store and block, check if it becomes minus
+        // 【順序が最重要】申請の保存を最初に行う。
+        // 以前は「稼働不足のお知らせ配信」を保存より先に await していたため、
+        // announcements の create が BM/AM のみ許可（firestore.rules）である店長・スタッフでは
+        // permission-denied で例外になり、**申請が1件も保存されないまま** catch に落ちていた。
+        // しかもエラー表示はページ上端の通常フローにあり、画面下の確定ボタンを押した本人には見えず、
+        // 下書きも消えないのでカレンダーには色が残る＝「送信できたのに反映されない」になっていた。
+        const savedKeys: Array<{ staffId: string; dateStr: string }> = [];
+        let failedCount = 0;
+
+        // Save requests
+        for (const [staffId, drafts] of Object.entries(draftRequests)) {
+            const sStoreId = staffs.find(s => s.id === staffId)?.storeId || selectedStoreId;
+            for (const [dateStr, type] of Object.entries(drafts)) {
+                // 1件ずつ成否を見る。1件の失敗で残りを捨てない（部分成功をそのまま報告する）
+                try {
+                    const existing = shiftRequests.find(r => r.staffId === staffId && r.date === dateStr);
+                    if (type === null) {
+                        if (existing) {
+                            await deleteShiftRequest(existing.id);
+                        } else {
+                            await deleteShiftRequest(staffId + '_' + dateStr);
+                        }
+                    } else if (existing) {
+                        if (existing.type !== type) {
+                            await saveShiftRequest({ ...existing, type, status: 'pending' });
+                        }
+                    } else {
+                        await saveShiftRequest({
+                            id: '',
+                            staffId,
+                            storeId: sStoreId,
+                            date: dateStr,
+                            type,
+                            status: 'pending',
+                            submittedBy: user?.uid || '',
+                            notes: ''
+                        });
+                    }
+                    savedKeys.push({ staffId, dateStr });
+                } catch (e) {
+                    failedCount++;
+                    console.error('Shift request save failed', { staffId, dateStr, type }, e);
+                }
+            }
+        }
+
+        // 保存できた分だけ下書きから外す。失敗した分は画面に残して再送できるようにする
+        // （成功したのに下書きが残る／失敗したのに消える、のどちらも起こさない）
+        if (savedKeys.length > 0) {
+            setDraftRequests(prev => {
+                const next: typeof prev = {};
+                Object.entries(prev).forEach(([sid, drafts]) => {
+                    const remain: Record<string, ShiftRequestType | null> = {};
+                    Object.entries(drafts).forEach(([dStr, t]) => {
+                        if (!savedKeys.some(k => k.staffId === sid && k.dateStr === dStr)) remain[dStr] = t;
+                    });
+                    if (Object.keys(remain).length > 0) next[sid] = remain;
+                });
+                return next;
+            });
+        }
+
+        // Force a re-fetch of shift requests from Firestore to be 100% sure we are in sync
+        const prefix = format(currentDate, 'yyyy-MM');
+        initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true);
+
+        if (failedCount > 0) {
+            setStatusMessage({
+                type: 'error',
+                text: savedKeys.length > 0
+                    ? savedKeys.length + '件を申請しましたが、' + failedCount + '件は保存できませんでした。残っている分をもう一度確定してください。'
+                    : '申請を保存できませんでした（' + failedCount + '件）。通信状況を確認して、もう一度お試しください。'
+            });
+        } else {
+            setStatusMessage({ type: 'success', text: savedKeys.length + '件の申請を保存しました。' });
+            setIsManagerApproved(false);
+        }
+
+        // 稼働不足のお知らせ配信は**保存のあと**に、失敗しても申請を巻き戻さない形で行う。
+        // 店長・スタッフは announcements への create 権限が無いので通常ここは黙って落ちる（＝従来と同じ結果）。
+        // 申請そのものは既に保存済みなので、これが失敗しても申請は消えない。
+        try {
+            const updatedDates = new Set<string>();
+            savedKeys.forEach(k => updatedDates.add(k.dateStr));
+
             for (const dStr of Array.from(updatedDates)) {
                 const dayObj = new Date(dStr);
                 const blockSlots = getBlockAvailableOffSlots(dayObj);
 
-                stores.forEach(async (store) => {
+                // forEach(async ...) は await されず、失敗が未処理のPromise拒否になって消えるので for...of にする
+                for (const store of stores) {
                     const stSlots = getStoreAvailableOffSlots(store.id, dayObj);
                     if (stSlots.remaining < 0 && stSlots.allowed !== 999) {
                         // Store is minus
-                        const content = `<p><strong>${store.name}</strong> にて、<strong>${format(dayObj, 'M/d (E)', { locale: ja })}</strong> の休可枠がマイナス（不足 ${Math.abs(stSlots.remaining)}名）になりました。</p><p>他店舗からの応援など調整をお願いします。</p>`;
+                        const content = '<p><strong>' + store.name + '</strong> にて、<strong>' + format(dayObj, 'M/d (E)', { locale: ja }) + '</strong> の休可枠がマイナス（不足 ' + Math.abs(stSlots.remaining) + '名）になりました。</p><p>他店舗からの応援など調整をお願いします。</p>';
+                        try {
+                            await addAnnouncement({
+                                title: '【警告】' + store.name + 'の稼働不足',
+                                content,
+                                authorId: user?.uid || 'system',
+                                authorName: 'システム自動通知',
+                                authorRole: 'system',
+                                isImportant: true,
+                                displayUntil: new Date(dayObj.getTime() + 86400000).toISOString()
+                            });
+                        } catch (e) {
+                            console.warn('稼働不足のお知らせを配信できませんでした（店舗）', store.name, dStr, e);
+                        }
+                    }
+                }
+
+                if (blockSlots.remaining < 0) {
+                    // Block is minus
+                    const content = '<p><strong>ブロック全体</strong> にて、<strong>' + format(dayObj, 'M/d (E)', { locale: ja }) + '</strong> の休可枠がマイナス（全体不足 ' + Math.abs(blockSlots.remaining) + '名）になりました。</p><p>全店舗でのシフト再調整が必要です。</p>';
+                    try {
                         await addAnnouncement({
-                            title: `【警告】${store.name}の稼働不足`,
+                            title: '【緊急】ブロック全体の稼働不足',
                             content,
                             authorId: user?.uid || 'system',
                             authorName: 'システム自動通知',
@@ -300,69 +438,13 @@ export const StaffShiftRequest = () => {
                             isImportant: true,
                             displayUntil: new Date(dayObj.getTime() + 86400000).toISOString()
                         });
-                    }
-                });
-
-                if (blockSlots.remaining < 0) {
-                    // Block is minus
-                    const content = `<p><strong>ブロック全体</strong> にて、<strong>${format(dayObj, 'M/d (E)', { locale: ja })}</strong> の休可枠がマイナス（全体不足 ${Math.abs(blockSlots.remaining)}名）になりました。</p><p>全店舗でのシフト再調整が必要です。</p>`;
-                    // Need to generate ID? addAnnouncement probably handles it.
-                    await addAnnouncement({
-                        title: `【緊急】ブロック全体の稼働不足`,
-                        content,
-                        authorId: user?.uid || 'system',
-                        authorName: 'システム自動通知',
-                        authorRole: 'system',
-                        isImportant: true,
-                        displayUntil: new Date(dayObj.getTime() + 86400000).toISOString()
-                    });
-                }
-            }
-
-            // Save requests
-            for (const [staffId, drafts] of Object.entries(draftRequests)) {
-                const sStoreId = staffs.find(s => s.id === staffId)?.storeId || selectedStoreId;
-                for (const [dateStr, type] of Object.entries(drafts)) {
-                    const existing = shiftRequests.find(r => r.staffId === staffId && r.date === dateStr);
-                    if (type === null) {
-                        if (existing) {
-                            await deleteShiftRequest(existing.id);
-                        } else {
-                            await deleteShiftRequest(`${staffId}_${dateStr}`);
-                        }
-                    } else {
-                        if (existing) {
-                            if (existing.type !== type) {
-                                await saveShiftRequest({ ...existing, type, status: 'pending' });
-                            }
-                        } else {
-                            await saveShiftRequest({
-                                id: '',
-                                staffId,
-                                storeId: sStoreId,
-                                date: dateStr,
-                                type,
-                                status: 'pending',
-                                submittedBy: user?.uid || '',
-                                notes: ''
-                            });
-                        }
+                    } catch (e) {
+                        console.warn('稼働不足のお知らせを配信できませんでした（ブロック）', dStr, e);
                     }
                 }
             }
-
-            // Force a re-fetch of shift requests from Firestore to be 100% sure we are in sync
-            const prefix = format(currentDate, 'yyyy-MM');
-            initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true);
-
-            setStatusMessage({type: 'success', text: '全スタッフの一括申請を完了しました！'});
-            setTimeout(() => setStatusMessage(null), 3000);
-            setDraftRequests({});
-            setIsManagerApproved(false);
         } catch (e) {
-            console.error(e);
-            setStatusMessage({type: 'error', text: '申請中にエラーが発生しました'});
-            setTimeout(() => setStatusMessage(null), 3000);
+            console.warn('稼働不足のお知らせ処理でエラー', e);
         } finally {
             setIsSubmitting(false);
         }
@@ -379,10 +461,20 @@ export const StaffShiftRequest = () => {
                 希望休かんたん登録
             </h1>
 
+            {/* 結果表示は画面に固定する。
+                以前は通常フローの上端に置いていたため、画面下の確定ボタンを押した本人には
+                スクロール外で見えず、失敗しても「送信できた」と思われていた。 */}
             {statusMessage && (
-                <div className={`p-4 rounded-2xl flex items-start gap-3 font-bold text-base ${statusMessage.type === 'error' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'}`}>
+                <div
+                    role="status"
+                    aria-live="polite"
+                    onClick={() => setStatusMessage(null)}
+                    className={`fixed left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md p-4 rounded-2xl shadow-xl flex items-start gap-3 font-bold text-base cursor-pointer
+                        top-[calc(1rem+env(safe-area-inset-top))]
+                        ${statusMessage.type === 'error' ? 'bg-danger text-white' : 'bg-success text-white'}`}
+                >
                     {statusMessage.type === 'error' ? <AlertTriangle size={20} className="shrink-0"/> : <CheckCircle size={20} className="shrink-0"/>}
-                    <p>{statusMessage.text}</p>
+                    <p className="flex-1 leading-relaxed">{statusMessage.text}</p>
                 </div>
             )}
 
