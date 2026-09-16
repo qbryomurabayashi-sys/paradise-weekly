@@ -41,6 +41,8 @@ export const StaffShiftRequest = () => {
     const [draftRequests, setDraftRequests] = useState<Record<string, Record<string, ShiftRequestType | null>>>({});
     const [isManagerApproved, setIsManagerApproved] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    /** 送信の進捗。回線が遅いときに「止まっている」と誤解させないため件数で出す */
+    const [submitProgress, setSubmitProgress] = useState<{ done: number; total: number } | null>(null);
     const [statusMessage, setStatusMessage] = useState<{type: 'error' | 'success', text: string} | null>(null);
 
     useEffect(() => {
@@ -322,43 +324,89 @@ export const StaffShiftRequest = () => {
         // 下書きも消えないのでカレンダーには色が残る＝「送信できたのに反映されない」になっていた。
         const savedKeys: Array<{ staffId: string; dateStr: string }> = [];
         let failedCount = 0;
+        // 「他の人が登録した申請なので触れない」失敗は原因も対処も違うので分けて報告する
+        const lockedDates: string[] = [];
+        // 実際に書き込む操作だけを積む（何もしなくていいものは往復させない）
+        const ops: Array<{ staffId: string; dateStr: string; type: ShiftRequestType | null; existing?: any; sStoreId: string }> = [];
 
         // Save requests
         for (const [staffId, drafts] of Object.entries(draftRequests)) {
             const sStoreId = staffs.find(s => s.id === staffId)?.storeId || selectedStoreId;
             for (const [dateStr, type] of Object.entries(drafts)) {
-                // 1件ずつ成否を見る。1件の失敗で残りを捨てない（部分成功をそのまま報告する）
-                try {
-                    const existing = shiftRequests.find(r => r.staffId === staffId && r.date === dateStr);
-                    if (type === null) {
-                        if (existing) {
-                            await deleteShiftRequest(existing.id);
-                        } else {
-                            await deleteShiftRequest(staffId + '_' + dateStr);
-                        }
-                    } else if (existing) {
-                        if (existing.type !== type) {
-                            await saveShiftRequest({ ...existing, type, status: 'pending' });
-                        }
-                    } else {
-                        await saveShiftRequest({
-                            id: '',
-                            staffId,
-                            storeId: sStoreId,
-                            date: dateStr,
-                            type,
-                            status: 'pending',
-                            submittedBy: user?.uid || '',
-                            notes: ''
-                        });
-                    }
+                const existing = shiftRequests.find(r => r.staffId === staffId && r.date === dateStr);
+
+                // 存在しない申請を消そうとしない。
+                // 以前は existing が無くても `staffId_date` を組み立てて deleteDoc していた。
+                // 存在しないドキュメントの delete では rules の resource が null になり、
+                // `existing().submittedBy == request.auth.uid` の評価に失敗して permission-denied になる
+                // （BM・AMは isBM()/isAM() で通るので気づかない＝店長だけが踏む）。
+                // 日付を押して押し直した（＝結果的に何も申請しない）だけで例外になり、
+                // 旧コードではそこで保存ループ全体が止まって以降の申請が丸ごと消えていた。
+                // 消す対象が無いなら、望む状態（申請なし）は既に満たされているので何もしない。
+                if (type === null && !existing) {
                     savedKeys.push({ staffId, dateStr });
-                } catch (e) {
-                    failedCount++;
-                    console.error('Shift request save failed', { staffId, dateStr, type }, e);
+                    continue;
                 }
+
+                // 他の人（AM・前任者など）が登録した申請は、rules 上 店長では更新・削除できない
+                // （update/delete は existing().submittedBy == uid か AM・BM のみ）。
+                // 送ってから permission-denied になるのを待たず、理由を名指しで伝える。
+                const isOthers = !!existing && !!existing.submittedBy && existing.submittedBy !== user?.uid;
+                const canTouchOthers = user?.role === 'BM' || user?.role === 'AM';
+                if (isOthers && !canTouchOthers && (type === null || existing!.type !== type)) {
+                    lockedDates.push(format(new Date(dateStr), 'M/d', { locale: ja }));
+                    continue;
+                }
+
+                // 変更が無いものは書き込まない（無駄な往復を作らない）
+                if (type !== null && existing && existing.type === type) {
+                    savedKeys.push({ staffId, dateStr });
+                    continue;
+                }
+
+                ops.push({ staffId, dateStr, type, existing, sStoreId });
             }
         }
+
+        // 【ここが「反映されない」の主因】書き込みを1件ずつ await して直列に並べていた。
+        // 実データでは1件の往復に16〜50秒かかっており（会社回線対策で長ポーリング固定＋モバイル回線）、
+        // 20件なら15分以上「処理中...」が続く。誰も待てないのでアプリを閉じる／iOSがタブを破棄する→
+        // 残りが丸ごと消える。実際に9/15の記録は50秒間隔で3件だけ入って止まっていた。
+        // 往復を重ねずまとめて投げる（1件あたりの遅さは変わらないが、全体は1回分の待ち時間で終わる）。
+        const CHUNK = 10;
+        for (let i = 0; i < ops.length; i += CHUNK) {
+            const chunk = ops.slice(i, i + CHUNK);
+            const results = await Promise.allSettled(chunk.map(async (op) => {
+                if (op.type === null) {
+                    await deleteShiftRequest(op.existing!.id);
+                } else if (op.existing) {
+                    await saveShiftRequest({ ...op.existing, type: op.type, status: 'pending' });
+                } else {
+                    await saveShiftRequest({
+                        id: '',
+                        staffId: op.staffId,
+                        storeId: op.sStoreId,
+                        date: op.dateStr,
+                        type: op.type,
+                        status: 'pending',
+                        submittedBy: user?.uid || '',
+                        notes: ''
+                    });
+                }
+            }));
+            results.forEach((res, idx) => {
+                const op = chunk[idx];
+                if (res.status === 'fulfilled') {
+                    savedKeys.push({ staffId: op.staffId, dateStr: op.dateStr });
+                } else {
+                    failedCount++;
+                    console.error('Shift request save failed', { staffId: op.staffId, dateStr: op.dateStr, type: op.type }, res.reason);
+                }
+            });
+            // 遅い回線でも進んでいることが見えるようにする（無言の「処理中...」で放置させない）
+            setSubmitProgress({ done: Math.min(i + CHUNK, ops.length), total: ops.length });
+        }
+        setSubmitProgress(null);
 
         // 保存できた分だけ下書きから外す。失敗した分は画面に残して再送できるようにする
         // （成功したのに下書きが残る／失敗したのに消える、のどちらも起こさない）
@@ -380,7 +428,16 @@ export const StaffShiftRequest = () => {
         const prefix = format(currentDate, 'yyyy-MM');
         initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true);
 
-        if (failedCount > 0) {
+        if (lockedDates.length > 0) {
+            // 通信の失敗と混ぜない。ここは「権限上どうやっても保存できない」ので再送を促してはいけない
+            setStatusMessage({
+                type: 'error',
+                text: (savedKeys.length > 0 ? savedKeys.length + '件を申請しました。ただし ' : '')
+                    + lockedDates.join('・') + ' は他の人（AM・前任者など）が登録した申請のため変更できません。'
+                    + 'この日はAM・BMに変更を依頼してください。'
+                    + (failedCount > 0 ? 'さらに' + failedCount + '件は通信エラーで保存できませんでした。' : '')
+            });
+        } else if (failedCount > 0) {
             setStatusMessage({
                 type: 'error',
                 text: savedKeys.length > 0
@@ -799,7 +856,10 @@ export const StaffShiftRequest = () => {
                             }
                         `}
                     >
-                        {!storesLoaded ? '店舗情報の再読込が必要です' : !isRequestsReady ? '予定を読み込み中…' : isSubmitting ? '処理中...' : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
+                        {!storesLoaded ? '店舗情報の再読込が必要です'
+                            : !isRequestsReady ? '予定を読み込み中…'
+                            : isSubmitting ? (submitProgress ? `送信中… ${submitProgress.done}/${submitProgress.total}件` : '送信中…')
+                            : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
                         {hasAnyChanges && !isSubmitting && <CheckCircle size={20} />}
                     </button>
                 </div>
