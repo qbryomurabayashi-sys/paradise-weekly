@@ -614,8 +614,11 @@ const PendingApprovalsView = ({ stores, staffs, requests, currentDate, setCurren
     const handleRejectAll = (staffId: string) => handleBulk(staffId, 'rejected');
 
     return (
-        <div className="space-y-6">
+        <>
+            {/* space-y-6 の第1子に置くと `> * + *` で本文に margin-top が付き、
+                トーストが出た瞬間に画面がずれる。レイアウトの外に出す */}
             <ResultToastView toast={toast} onClose={() => setToast(null)} />
+            <div className="space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-gray-100 rounded-full transition">
@@ -688,7 +691,8 @@ const PendingApprovalsView = ({ stores, staffs, requests, currentDate, setCurren
                     })}
                 </div>
             )}
-        </div>
+            </div>
+        </>
     );
 };
 
@@ -743,7 +747,9 @@ const ShiftCalendarView = ({ stores, staffs, requests, currentDate, setCurrentDa
             if (store.closedDaysOfWeek?.includes(day)) return 0;
             if (store.closedDates?.includes(dateStr)) return 0;
             
-            const req = store.requiredStaffing;
+            // requiredStaffing は Store 型では必須だが Firestore は型を保証しない（旧データ・手入力）。
+            // ここはレンダー中に呼ばれるので、欠落した店舗が1件でもあると画面全体が白画面になる。
+            const req = (store.requiredStaffing || {}) as any;
             if (isHoliday(date)) return req.sundayHoliday || 0;
             if (day === 1) return req.monday || 0;
             if (day === 5) return req.friday || 0;
@@ -1044,7 +1050,8 @@ const DayRequestsModal = ({ date, store, staffs, requests, onClose, onSave, onDe
         return stores.map((st: any) => {
             if (!isAllStores && st.id === store?.id) return null;
             
-            const req = st.requiredStaffing;
+            // 同上。requiredStaffing 欠落の店舗で白画面にしない
+            const req = (st.requiredStaffing || {}) as any;
             let stReqCount = 0;
             if (st.closedDaysOfWeek?.includes(dayOfWeek) || st.closedDates?.includes(dateStr)) {
                 stReqCount = 0;

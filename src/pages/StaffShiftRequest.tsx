@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useShiftStore, ShiftRequestType, shiftRequestsScopeKey } from '../store/useShiftStore';
+import { useShiftStore, ShiftRequestType, shiftRequestsScopeKey, resolveShiftScopeStoreId } from '../store/useShiftStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useAnnouncementStore } from '../store/useAnnouncementStore';
 import { format, startOfMonth, addMonths, subMonths, eachDayOfInterval, endOfMonth, getDay, isSameDay } from 'date-fns';
@@ -36,7 +36,7 @@ const LoadFailureNotice = ({ message, onRetry, retrying }: { message: string; on
 );
 
 export const StaffShiftRequest = () => {
-    const { user, profileError } = useAuthStore();
+    const { user, profileError, reloadProfile } = useAuthStore();
     const { stores, staffs, shiftRequests, storesLoaded, staffsLoaded, storesError, staffsError, requestsError, shiftScopeNotice, loadedRequestsScope, isLoading, initStores, initStaffs, initShiftRequests, saveShiftRequest, deleteShiftRequest } = useShiftStore();
     const { addAnnouncement } = useAnnouncementStore();
     const [currentDate, setCurrentDate] = useState(addMonths(new Date(), 1));
@@ -50,7 +50,7 @@ export const StaffShiftRequest = () => {
     const [isManagerApproved, setIsManagerApproved] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     /** 送信の進捗。回線が遅いときに「止まっている」と誤解させないため件数で出す */
-    const [submitProgress, setSubmitProgress] = useState<{ done: number; total: number } | null>(null);
+    const [submitProgress, setSubmitProgress] = useState<{ done: number; total: number; unconfirmed: number } | null>(null);
     const [statusMessage, setStatusMessage] = useState<{type: 'error' | 'success', text: string} | null>(null);
 
     useEffect(() => {
@@ -193,13 +193,43 @@ export const StaffShiftRequest = () => {
      * 確定できてしまう（＝他人の申請を setDoc で丸ごと置き換える）。
      */
     const isRolePending = !user?.role && !profileError;
+    /**
+     * 役職の確認待ちが長引いたら、自分で取り直せる手段を出す。
+     * useAuthStore のリトライは 8秒×4試行＋2/4/8秒のバックオフで最長40秒近くかかる。
+     * リトライ設計はそのままにして、10秒待った時点で手動の「再取得」を出す
+     * （無言で40秒待たせるとリロードを繰り返すだけになる）。
+     */
+    const [roleWaitLong, setRoleWaitLong] = useState(false);
+    const [isReloadingProfile, setIsReloadingProfile] = useState(false);
+    useEffect(() => {
+        if (!isRolePending) { setRoleWaitLong(false); return; }
+        const t = setTimeout(() => setRoleWaitLong(true), 10000);
+        return () => clearTimeout(t);
+    }, [isRolePending]);
+    const handleReloadProfile = async () => {
+        setIsReloadingProfile(true);
+        try {
+            await reloadProfile();
+        } catch (e) {
+            console.error('権限の再取得に失敗', e);
+        } finally {
+            setIsReloadingProfile(false);
+        }
+    };
+    /**
+     * 実際に絞り込みに使える自店の id（解決できなければ 'own'＝自分ぶんのみ）。
+     * これを依存に入れておかないと、店舗マスタを再読込して自店が見つかるようになっても
+     * （initStores(true) は storesLoaded を false に戻さないため）依存が何も変わらず
+     * 取得が再発火せず、「自分の申請のみ」のまま操作できてしまう。店舗改名でも同じ。
+     */
+    const scopeStoreId = useMemo(() => resolveShiftScopeStoreId(stores, user || undefined), [stores, user?.role, user?.storeName]);
     useEffect(() => {
         // 店舗マスタが揃うまで投げない（権限分岐が stores 依存なので、黙って別範囲を取るのを防ぐ）
         if (!storesLoaded) return;
         if (!user?.role) return;
         const unsub = initShiftRequests(monthPrefix, {role: user.role, storeName: user.storeName, uid: user.uid});
         return () => unsub();
-    }, [monthPrefix, user?.uid, user?.role, user?.storeName, storesLoaded]);
+    }, [monthPrefix, user?.uid, user?.role, user?.storeName, storesLoaded, scopeStoreId]);
 
     /**
      * 提出後の再取得を「送信を始めた時点の月」ではなく**最新の表示月**に対して行うための参照。
@@ -240,7 +270,7 @@ export const StaffShiftRequest = () => {
     // 判定は月だけでなく「どの権限・どの店舗の条件で取得したか」まで一致していること
     // （role 未確定のまま取った自分ぶんだけのデータを「読み込み済み」にしない）
     const isRequestsReady = !!user?.role
-        && loadedRequestsScope === shiftRequestsScopeKey(monthPrefix, { role: user.role, storeName: user.storeName, uid: user.uid });
+        && loadedRequestsScope === shiftRequestsScopeKey(monthPrefix, { role: user.role, storeName: user.storeName, uid: user.uid }, scopeStoreId);
     // キャッシュだけで表示している状態（requiredStaffing・定休日が古い可能性がある）。
     // この状態で確定させると誤った不足人数のお知らせが全社配信されるため、申請は止める。
     const isStoresStale = !storesLoaded && stores.length > 0;
@@ -486,6 +516,8 @@ export const StaffShiftRequest = () => {
         // 下書きも消えないのでカレンダーには色が残る＝「送信できたのに反映されない」になっていた。
         const savedKeys: Array<{ staffId: string; dateStr: string }> = [];
         let failedCount = 0;
+        // 実際に Firestore へ書き込めた件数（変更なし・削除不要のものを含まない）
+        let writtenCount = 0;
         // タイムアウトした件数（＝保存できたか確認できなかった件数）。失敗と断定せず文言を分ける
         let unconfirmedCount = 0;
         // 再送しても直らない失敗。通信エラーに丸めず、対処を分けて伝える
@@ -549,6 +581,8 @@ export const StaffShiftRequest = () => {
         // 進捗は「1件終わるごと」に進める。チャンク完了時にしか更新しないと
         // 10件以下（＝大半のケース）では一度も件数が出ず、進捗の意味が無くなる。
         let doneCount = 0;
+        // 締め切り切れは「完了」と数えない（裏で書き込みが続いているので嘘の完了になる）
+        let unknownCount = 0;
         for (let i = 0; i < ops.length; i += CHUNK) {
             const chunk = ops.slice(i, i + CHUNK);
             const results = await Promise.allSettled(chunk.map((op) => {
@@ -570,15 +604,25 @@ export const StaffShiftRequest = () => {
                 // 1件ずつ締め切りを切る。締め切りが無いと、圏外・回線切替で
                 // Promise が永久に解決せず「送信中…」のまま操作不能になる。
                 // 実測で1件56秒かかる回線があるため 90秒。短くすると正常な遅い回線を失敗扱いにしてしまう。
-                return withTimeout(write, SAVE_TIMEOUT_MS, '申請の保存').finally(() => {
-                    doneCount = Math.min(doneCount + 1, ops.length);
-                    setSubmitProgress({ done: doneCount, total: ops.length });
-                });
+                return withTimeout(write, SAVE_TIMEOUT_MS, '申請の保存').then(
+                    (v) => {
+                        doneCount = Math.min(doneCount + 1, ops.length);
+                        setSubmitProgress({ done: doneCount, total: ops.length, unconfirmed: unknownCount });
+                        return v;
+                    },
+                    (err) => {
+                        if (err?.name === 'TimeoutError') unknownCount = Math.min(unknownCount + 1, ops.length);
+                        else doneCount = Math.min(doneCount + 1, ops.length);
+                        setSubmitProgress({ done: doneCount, total: ops.length, unconfirmed: unknownCount });
+                        throw err;
+                    }
+                );
             }));
             results.forEach((res, idx) => {
                 const op = chunk[idx];
                 if (res.status === 'fulfilled') {
                     savedKeys.push({ staffId: op.staffId, dateStr: op.dateStr });
+                    writtenCount++;
                 } else {
                     failedCount++;
                     const reason: any = res.reason;
@@ -661,7 +705,12 @@ export const StaffShiftRequest = () => {
                     + (failedNote ? '残っている分をもう一度確定してください。' : '')
             });
         } else {
-            setStatusMessage({ type: 'success', text: savedKeys.length + '件の申請を保存しました。' });
+            // savedKeys には「もともと申請が無いので消す必要がなかった」「種別が同じで書き込み不要」も
+            // 入っている。実際に書き込んだ件数を併記して、数の意味を嘘にしない。
+            setStatusMessage({
+                type: 'success',
+                text: savedKeys.length + '件を確定しました（うち変更 ' + writtenCount + '件）。'
+            });
             setIsManagerApproved(false);
         }
 
@@ -771,9 +820,21 @@ export const StaffShiftRequest = () => {
             {isRolePending && (
                 <div className="p-4 rounded-2xl flex items-start gap-3 bg-qb-yellow/15 text-ink">
                     <RefreshCw size={20} className="shrink-0 text-qb-blue animate-spin" />
-                    <p className="text-sm font-bold leading-relaxed">
-                        権限（役職）を確認中です。確認できるまで申請の登録はできません（誤って他の人の申請を上書きしないためです）。
-                    </p>
+                    <div className="flex-1 space-y-2">
+                        <p className="text-sm font-bold leading-relaxed">
+                            権限（役職）を確認中です。確認できるまで申請の登録はできません（誤って他の人の申請を上書きしないためです）。
+                        </p>
+                        {roleWaitLong && (
+                            <button
+                                onClick={handleReloadProfile}
+                                disabled={isReloadingProfile}
+                                className="min-h-[44px] px-4 rounded-xl bg-surface border border-line text-qb-blue text-sm font-black flex items-center gap-1.5 active:scale-95 transition disabled:opacity-60"
+                            >
+                                <RefreshCw size={16} className={isReloadingProfile ? 'animate-spin' : ''} />
+                                {isReloadingProfile ? '取得中' : '再取得'}
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -781,7 +842,7 @@ export const StaffShiftRequest = () => {
                 <div className="bg-danger/10 border border-danger/20 rounded-xl p-3 flex items-start gap-3">
                     <AlertCircle size={18} className="text-danger shrink-0 mt-0.5" />
                     <p className="flex-1 text-sm font-bold text-danger leading-relaxed">
-                        権限（役職）を取得できませんでした。画面上部の「再読み込み」で権限を取り直してください。取得できるまで申請はできません。
+                        権限（役職）を取得できませんでした。画面上部の「再取得」で権限を取り直してください。取得できるまで申請はできません。
                     </p>
                 </div>
             )}
@@ -790,7 +851,7 @@ export const StaffShiftRequest = () => {
                 <div className="p-4 rounded-2xl flex items-start gap-3 bg-qb-yellow/15 text-ink">
                     <Info size={20} className="shrink-0 text-qb-blue" />
                     <p className="text-sm font-bold leading-relaxed">
-                        {otherMonthDrafts.map(o => `${Number(o.month.slice(5, 7))}月に未申請 ${o.count}件`).join('、')}
+                        {otherMonthDrafts.map(o => `${o.month.slice(0, 4)}年${Number(o.month.slice(5, 7))}月に未申請 ${o.count}件`).join('、')}
                         があります。その月に切り替えて確定してください（この画面では表示中の月だけを申請します）。
                     </p>
                 </div>
@@ -1141,7 +1202,9 @@ export const StaffShiftRequest = () => {
                             : (profileError && !user?.role) ? '権限（役職）を取得できません'
                             : !storesLoaded ? '店舗情報の再読込が必要です'
                             : !isRequestsReady ? '予定を読み込み中…'
-                            : isSubmitting ? (submitProgress ? `送信中… ${submitProgress.done}/${submitProgress.total}件` : '送信中…')
+                            : isSubmitting ? (submitProgress
+                                ? `送信中… ${submitProgress.done}/${submitProgress.total}件${submitProgress.unconfirmed > 0 ? `（${submitProgress.unconfirmed}件は確認中）` : ''}`
+                                : '送信中…')
                             : hasAnyChanges ? '選択した申請・取消を確定する' : '変更がありません'}
                         {hasAnyChanges && !isSubmitting && <CheckCircle size={20} />}
                     </button>

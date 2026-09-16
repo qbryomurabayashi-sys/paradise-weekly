@@ -26,14 +26,28 @@ const FETCH_TIMEOUT_MESSAGE = '時間内に読み込めませんでした。通�
  * その状態で確定すると existing が見つからず新規扱いで setDoc され、
  * doc ID が `staffId_date` 固定なので他人の申請を丸ごと置き換える。
  *
+ * また `resolvedStoreId`（店舗マスタで実際に解決できた自店の id／解決できなければ 'own'）も含める。
+ * 店長・スタッフは自店が店舗マスタに見つからないと `where('submittedBy','==',uid)`＝
+ * 「自分が出した申請だけ」にフォールバックする。これを含めないと、
+ * 店舗マスタが直った（または改名が届いた）あとも「読み込み済み」のままで取り直されず、
+ * 同僚の申請が見えないまま操作でき、サーバで拒否される意味の分からないエラーだけが出る。
+ *
  * 変えているのは「読み込み済みの同一性判定」だけで、クエリ条件そのものは変えていない。
- * storeId ではなく storeName を使うのは、storeId が storeName から一意に決まるうえ、
- * 画面側で店舗マスタの解決ロジックを二重に持たずに同じキーを作れるため。
  */
 export const shiftRequestsScopeKey = (
   monthPrefix: string,
-  user?: { role?: string | null; storeName?: string; uid?: string }
-) => `${monthPrefix}|${user?.role || ''}|${user?.uid || ''}|${user?.storeName || ''}`;
+  user?: { role?: string | null; storeName?: string; uid?: string },
+  resolvedStoreId?: string
+) => `${monthPrefix}|${user?.role || ''}|${user?.uid || ''}|${user?.storeName || ''}|${resolvedStoreId || ''}`;
+
+/** 店長・スタッフが実際にどの店舗idで絞れるか（解決できなければ 'own'＝自分ぶんのみ） */
+export const resolveShiftScopeStoreId = (
+  stores: Array<{ id: string; name: string }>,
+  user?: { role?: string | null; storeName?: string }
+): string => {
+  if (!user || (user.role !== '店長' && user.role !== 'スタッフ')) return '';
+  return stores.find(s => s.name === user.storeName)?.id || 'own';
+};
 
 export interface Store {
   id: string;
@@ -136,12 +150,13 @@ const readStoresCache = (uid: string): Store[] => {
   if (!cached.savedAt || !Array.isArray(cached.stores)) return [];
   if (Date.now() - cached.savedAt > STORES_CACHE_MAX_AGE) return [];
   // 壊れた値でUIが落ちないよう最低限の形だけ検査する。
-  // requiredStaffing はレンダー中に読まれる（休可枠の計算）ので、
-  // 欠落した店舗を1つでも流し込むと画面全体が白画面になる。ここで落とす。
-  return cached.stores.filter(s =>
-    s && typeof s.id === 'string' && typeof s.name === 'string'
-    && !!s.requiredStaffing && typeof s.requiredStaffing === 'object'
-  );
+  //
+  // requiredStaffing の有無はここでは見ない（一度入れたが撤回した）。
+  // ライブ取得（loadStores）は同じフィルタをしていないため、ここだけで弾くと
+  // キャッシュ描画時とライブ取得時で店舗の集合が食い違い、requiredStaffing 未設定の店舗が
+  // 「キャッシュ表示中だけプルダウンから消える」＝その店の店長が自店を選べなくなる。
+  // 白画面対策は参照側のガード（各所で `store.requiredStaffing || {}`）に寄せている。
+  return cached.stores.filter(s => s && typeof s.id === 'string' && typeof s.name === 'string');
 };
 
 /** ログアウト時・uid切替時に店舗キャッシュを捨てる（別ユーザーへの残存を防ぐ） */
@@ -297,7 +312,9 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
   },
 
   initShiftRequests: (monthPrefix: string, user?: {role: string, storeName?: string, uid: string}, force: boolean = false) => {
-    const scopeKey = shiftRequestsScopeKey(monthPrefix, user);
+    // 解決結果は stores の到着で変わるので、判定のたびに取り直す
+    const currentScopeKey = () => shiftRequestsScopeKey(monthPrefix, user, resolveShiftScopeStoreId(get().stores, user));
+    const scopeKey = currentScopeKey();
     if (!force && get().loadedRequestsScope === scopeKey) return () => {};
     // 完了フラグは「成功後」に立てる（失敗を読み込み済みにしないため）。
     // in-flight ガードは【同じ月】の二重フェッチだけを弾く。
@@ -372,7 +389,9 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
         // 古い月の応答で新しい月の state を上書きしない
         if (isStale()) return;
         // 成功してから「この月は読み込み済み」にする
-        set({ shiftRequests, isLoading: false, requestsError: null, loadedRequestsScope: scopeKey });
+        // 実際に絞り込みに使えた店舗まで含めたキーで「読み込み済み」にする
+        // （stores を待っている間に解決できるようになった場合を取りこぼさない）
+        set({ shiftRequests, isLoading: false, requestsError: null, loadedRequestsScope: currentScopeKey() });
 
         // ※ deduplicateShiftRequests / cleanupOldShiftRequests の呼び出しはここから外した。
         //   - 画面を開くたびに Firestore を消す（＝不可逆）処理を走らせるべきではない。
