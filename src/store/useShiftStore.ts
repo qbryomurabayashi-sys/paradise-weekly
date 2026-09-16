@@ -3,6 +3,16 @@ import { db } from '../lib/firebase';
 import { collection, query, doc, setDoc, updateDoc, deleteDoc, where, getDocs, limit } from 'firebase/firestore';
 import { subMonths, format } from 'date-fns';
 import { safeLocal } from '../lib/safeStorage';
+import { withTimeout } from '../lib/withTimeout';
+
+/**
+ * 取得の締め切り。長ポーリング固定＋モバイル回線では getDocs が
+ * 例外も返さず解決しないことがあり、そのままだと storesLoaded が永久に false のまま
+ * エラーも出ず、確定ボタンが「店舗情報の再読込が必要です」で死ぬ。
+ * 締め切りを切って *Error に入れることで、既存の再読込UIを出せるようにする。
+ */
+const FETCH_TIMEOUT_MS = 30000;
+const FETCH_TIMEOUT_MESSAGE = '時間内に読み込めませんでした。通信状況を確認して再読込してください。';
 
 export interface Store {
   id: string;
@@ -103,8 +113,13 @@ const readStoresCache = (uid: string): Store[] => {
   const cached = safeLocal.getJSON<{ savedAt?: number; stores?: Store[] }>(storesCacheKey(uid), {});
   if (!cached.savedAt || !Array.isArray(cached.stores)) return [];
   if (Date.now() - cached.savedAt > STORES_CACHE_MAX_AGE) return [];
-  // 壊れた値でUIが落ちないよう最低限の形だけ検査する
-  return cached.stores.filter(s => s && typeof s.id === 'string' && typeof s.name === 'string');
+  // 壊れた値でUIが落ちないよう最低限の形だけ検査する。
+  // requiredStaffing はレンダー中に読まれる（休可枠の計算）ので、
+  // 欠落した店舗を1つでも流し込むと画面全体が白画面になる。ここで落とす。
+  return cached.stores.filter(s =>
+    s && typeof s.id === 'string' && typeof s.name === 'string'
+    && !!s.requiredStaffing && typeof s.requiredStaffing === 'object'
+  );
 };
 
 /** ログアウト時・uid切替時に店舗キャッシュを捨てる（別ユーザーへの残存を防ぐ） */
@@ -168,7 +183,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
     const loadStores = async () => {
       try {
         const q = query(collection(db, 'stores'), limit(100));
-        const snapshot = await getDocs(q);
+        const snapshot = await withTimeout(getDocs(q), FETCH_TIMEOUT_MS, '店舗の読み込み');
         let stores = snapshot.docs.map(doc => {
           const data = doc.data() as Store;
           if (data.assignedAM === '越井A') {
@@ -220,7 +235,10 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
           console.error("Stores fetch error:", error);
         }
         // storesLoaded は false のまま＝再試行できる。エラーはUIに出す（黙って空にしない）
-        set({ isLoading: false, storesError: '店舗の読み込みに失敗しました' });
+        set({
+          isLoading: false,
+          storesError: error?.name === 'TimeoutError' ? FETCH_TIMEOUT_MESSAGE : '店舗の読み込みに失敗しました'
+        });
       }
     };
 
@@ -236,7 +254,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
     const loadStaffs = async () => {
       try {
         const q = query(collection(db, 'staffs'), limit(300));
-        const snapshot = await getDocs(q);
+        const snapshot = await withTimeout(getDocs(q), FETCH_TIMEOUT_MS, 'スタッフの読み込み');
         const staffs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Staff));
         set({ staffs, isLoading: false, staffsLoaded: true, staffsError: null });
       } catch (error: any) {
@@ -245,7 +263,10 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
         } else {
           console.error("Staffs fetch error:", error);
         }
-        set({ isLoading: false, staffsError: 'スタッフの読み込みに失敗しました' });
+        set({
+          isLoading: false,
+          staffsError: error?.name === 'TimeoutError' ? FETCH_TIMEOUT_MESSAGE : 'スタッフの読み込みに失敗しました'
+        });
       }
     };
 
@@ -320,7 +341,7 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
         }
 
         const q = query(collection(db, 'shift_requests'), ...constraints);
-        const snapshot = await getDocs(q);
+        const snapshot = await withTimeout(getDocs(q), FETCH_TIMEOUT_MS, '申請データの読み込み');
         const shiftRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ShiftRequest));
         // 古い月の応答で新しい月の state を上書きしない
         if (isStale()) return;
@@ -350,9 +371,11 @@ export const useShiftStore = create<ShiftStoreState>((set, get) => ({
         const isIndexMissing = error?.code === 'failed-precondition';
         set({
           isLoading: false,
-          requestsError: isIndexMissing
-            ? '申請データの検索設定（インデックス）が未作成のため読み込めませんでした。管理者に連絡してください。'
-            : '申請データの読み込みに失敗しました'
+          requestsError: error?.name === 'TimeoutError'
+            ? FETCH_TIMEOUT_MESSAGE
+            : isIndexMissing
+              ? '申請データの検索設定（インデックス）が未作成のため読み込めませんでした。管理者に連絡してください。'
+              : '申請データの読み込みに失敗しました'
         });
         // 失敗した月は loadedRequestsMonth を立てていない＝再試行できる
       }

@@ -8,6 +8,14 @@ import { Calendar, ChevronLeft, ChevronRight, CheckCircle, User as UserIcon, Sto
 import * as JapaneseHolidays from 'japanese-holidays';
 import { formatStaffName } from '../lib/formatUtils';
 import { safeLocal } from '../lib/safeStorage';
+import { withTimeout } from '../lib/withTimeout';
+
+/**
+ * 書き込み1件あたりの締め切り。
+ * 実測で1件の往復に最大56秒かかる回線があるため 90 秒に取る（短くすると
+ * 正常な遅い回線を失敗扱いにして、利用者に無意味な再送をさせてしまう）。
+ */
+const SAVE_TIMEOUT_MS = 90000;
 
 const isHoliday = (date: Date) => getDay(date) === 0 || JapaneseHolidays.isHoliday(date) !== undefined;
 
@@ -190,7 +198,11 @@ export const StaffShiftRequest = () => {
 
         const isClosed = st.closedDaysOfWeek?.includes(dayOfWeek) || st.closedDates?.includes(dateStr);
 
-        const req = st.requiredStaffing;
+        // requiredStaffing は Store 型では必須だが Firestore は型を保証しない
+        // （旧データ・手入力・壊れたローカルキャッシュ）。この関数はレンダー中に呼ばれるので、
+        // 欠落した店舗が1つでもあると undefined 参照で画面全体が白画面になり申請不能になる。
+        // 各値には既に `|| 0` のフォールバックがあるので、空オブジェクトで受け止めれば足りる。
+        const req = (st.requiredStaffing || {}) as any;
         let reqCount = 0;
         
         if (isClosed) {
@@ -314,8 +326,35 @@ export const StaffShiftRequest = () => {
             return;
         }
 
+        // 【送信前チェック1】uid が確定していないまま書き込むと submittedBy が空文字で作られ、
+        // firestore.rules の `existing().submittedBy == request.auth.uid` が永久に偽になる＝
+        // 本人でも二度と更新・削除できない申請が出来上がる（AM・BMに頼むしかなくなる）。
+        // 空文字を書き込む経路そのものを消すため、ここで止める。
+        if (!user?.uid) {
+            setStatusMessage({ type: 'error', text: 'ログイン状態を確認できませんでした。アプリを再読込してからもう一度お試しください。' });
+            return;
+        }
+        const uid = user.uid;
+
+        // 【送信前チェック2】オフラインなら1件も投げない。
+        // Firestore の setDoc/deleteDoc の Promise は、永続キャッシュに書けても
+        // サーバーの ack が返るまで解決しないので、オフラインで投げると
+        // エラーも進捗も出ないまま「送信中…」で固まる。下書きは消さずに中断する。
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            setStatusMessage({ type: 'error', text: 'オフラインのため送信できません。通信が回復してからもう一度確定してください。（下書きは残っています）' });
+            return;
+        }
+
         setIsSubmitting(true);
 
+        // 送信中に機内モード・Wi-Fi切断になったことを知らせる。
+        // ※ iOS の navigator.onLine は「機内モード/Wi-Fi切断」は拾うが
+        //   「圏内なのに通信できない（地下・低電力・電波1本）」は拾わない。
+        //   したがって固着を防ぐ本命は下の1件90秒タイムアウトであり、これは補助にすぎない。
+        const handleOffline = () => setStatusMessage({ type: 'error', text: '通信が切断されました。送信できなかった分は下書きに残るので、回復後にもう一度確定してください。' });
+        window.addEventListener('offline', handleOffline);
+
+        try {
         // 【順序が最重要】申請の保存を最初に行う。
         // 以前は「稼働不足のお知らせ配信」を保存より先に await していたため、
         // announcements の create が BM/AM のみ許可（firestore.rules）である店長・スタッフでは
@@ -324,6 +363,8 @@ export const StaffShiftRequest = () => {
         // 下書きも消えないのでカレンダーには色が残る＝「送信できたのに反映されない」になっていた。
         const savedKeys: Array<{ staffId: string; dateStr: string }> = [];
         let failedCount = 0;
+        // タイムアウトした件数（＝保存できたか確認できなかった件数）。失敗と断定せず文言を分ける
+        let unconfirmedCount = 0;
         // 「他の人が登録した申請なので触れない」失敗は原因も対処も違うので分けて報告する
         const lockedDates: string[] = [];
         // 実際に書き込む操作だけを積む（何もしなくていいものは往復させない）
@@ -351,9 +392,14 @@ export const StaffShiftRequest = () => {
                 // 他の人（AM・前任者など）が登録した申請は、rules 上 店長では更新・削除できない
                 // （update/delete は existing().submittedBy == uid か AM・BM のみ）。
                 // 送ってから permission-denied になるのを待たず、理由を名指しで伝える。
-                const isOthers = !!existing && !!existing.submittedBy && existing.submittedBy !== user?.uid;
-                const canTouchOthers = user?.role === 'BM' || user?.role === 'AM';
-                if (isOthers && !canTouchOthers && (type === null || existing!.type !== type)) {
+                //
+                // 判定は「自分のものだと確認できるとき以外は触れない」に**反転**させている。
+                // submittedBy が空文字・未設定のレガシー申請を「自分のもの」と誤判定して送ると、
+                // rules 側では `'' == uid` が偽なので店長は必ず permission-denied になり、
+                // それが通信エラー扱いで「もう一度確定してください」と案内される＝永久に再送し続ける。
+                const canTouch = user?.role === 'BM' || user?.role === 'AM'
+                    || (!!existing?.submittedBy && existing.submittedBy === uid);
+                if (!!existing && !canTouch && (type === null || existing!.type !== type)) {
                     lockedDates.push(format(new Date(dateStr), 'M/d', { locale: ja }));
                     continue;
                 }
@@ -376,23 +422,26 @@ export const StaffShiftRequest = () => {
         const CHUNK = 10;
         for (let i = 0; i < ops.length; i += CHUNK) {
             const chunk = ops.slice(i, i + CHUNK);
-            const results = await Promise.allSettled(chunk.map(async (op) => {
-                if (op.type === null) {
-                    await deleteShiftRequest(op.existing!.id);
-                } else if (op.existing) {
-                    await saveShiftRequest({ ...op.existing, type: op.type, status: 'pending' });
-                } else {
-                    await saveShiftRequest({
-                        id: '',
-                        staffId: op.staffId,
-                        storeId: op.sStoreId,
-                        date: op.dateStr,
-                        type: op.type,
-                        status: 'pending',
-                        submittedBy: user?.uid || '',
-                        notes: ''
-                    });
-                }
+            const results = await Promise.allSettled(chunk.map((op) => {
+                const write = op.type === null
+                    ? deleteShiftRequest(op.existing!.id)
+                    : op.existing
+                        ? saveShiftRequest({ ...op.existing, type: op.type, status: 'pending' })
+                        : saveShiftRequest({
+                            id: '',
+                            staffId: op.staffId,
+                            storeId: op.sStoreId,
+                            date: op.dateStr,
+                            type: op.type,
+                            status: 'pending',
+                            // uid は関数の入口で確認済み。空文字を書き込む経路は残さない
+                            submittedBy: uid,
+                            notes: ''
+                        });
+                // 1件ずつ締め切りを切る。締め切りが無いと、圏外・回線切替で
+                // Promise が永久に解決せず「送信中…」のまま操作不能になる。
+                // 実測で1件56秒かかる回線があるため 90秒。短くすると正常な遅い回線を失敗扱いにしてしまう。
+                return withTimeout(write, SAVE_TIMEOUT_MS, '申請の保存');
             }));
             results.forEach((res, idx) => {
                 const op = chunk[idx];
@@ -400,6 +449,9 @@ export const StaffShiftRequest = () => {
                     savedKeys.push({ staffId: op.staffId, dateStr: op.dateStr });
                 } else {
                     failedCount++;
+                    // タイムアウトは「失敗」と断定できない（裏で書き込みが続いて成功しうる）。
+                    // savedKeys に入れない＝下書きを残して再送できるようにし、文言も断定しない。
+                    if ((res.reason as any)?.name === 'TimeoutError') unconfirmedCount++;
                     console.error('Shift request save failed', { staffId: op.staffId, dateStr: op.dateStr, type: op.type }, res.reason);
                 }
             });
@@ -428,21 +480,33 @@ export const StaffShiftRequest = () => {
         const prefix = format(currentDate, 'yyyy-MM');
         initShiftRequests(prefix, user ? {role: user.role, storeName: user.storeName, uid: user.uid} : undefined, true);
 
+        // タイムアウトした分は「失敗」と断定できない（裏で書き込みが成立しうる）。
+        // doc ID は `staffId_date` 固定なので、同じ日付・同じ種別で再送しても二重登録にはならない。
+        // その一点を伝えて、再送をためらわせない／二重登録を心配させない。
+        const unconfirmedNote = unconfirmedCount > 0
+            ? unconfirmedCount + '件は保存を確認できませんでした（通信が遅い可能性があります）。もう一度確定しても二重登録にはなりません。'
+            : '';
+        const failedNote = failedCount - unconfirmedCount > 0
+            ? (failedCount - unconfirmedCount) + '件は通信エラーで保存できませんでした。'
+            : '';
+
         if (lockedDates.length > 0) {
             // 通信の失敗と混ぜない。ここは「権限上どうやっても保存できない」ので再送を促してはいけない
             setStatusMessage({
                 type: 'error',
                 text: (savedKeys.length > 0 ? savedKeys.length + '件を申請しました。ただし ' : '')
-                    + lockedDates.join('・') + ' は他の人（AM・前任者など）が登録した申請のため変更できません。'
+                    + lockedDates.join('・') + ' は他の人が登録した、または登録者が記録されていない申請のため変更できません。'
                     + 'この日はAM・BMに変更を依頼してください。'
-                    + (failedCount > 0 ? 'さらに' + failedCount + '件は通信エラーで保存できませんでした。' : '')
+                    + (failedNote ? 'さらに' + failedNote : '')
+                    + unconfirmedNote
             });
         } else if (failedCount > 0) {
             setStatusMessage({
                 type: 'error',
-                text: savedKeys.length > 0
-                    ? savedKeys.length + '件を申請しましたが、' + failedCount + '件は保存できませんでした。残っている分をもう一度確定してください。'
-                    : '申請を保存できませんでした（' + failedCount + '件）。通信状況を確認して、もう一度お試しください。'
+                text: (savedKeys.length > 0 ? savedKeys.length + '件を申請しました。' : '')
+                    + failedNote
+                    + unconfirmedNote
+                    + (failedNote ? '残っている分をもう一度確定してください。' : '')
             });
         } else {
             setStatusMessage({ type: 'success', text: savedKeys.length + '件の申請を保存しました。' });
@@ -450,9 +514,14 @@ export const StaffShiftRequest = () => {
         }
 
         // 稼働不足のお知らせ配信は**保存のあと**に、失敗しても申請を巻き戻さない形で行う。
-        // 店長・スタッフは announcements への create 権限が無いので通常ここは黙って落ちる（＝従来と同じ結果）。
-        // 申請そのものは既に保存済みなので、これが失敗しても申請は消えない。
-        try {
+        // さらに await しない（後追い）。
+        // 以前は savedKeys の日付ぶん×全店舗を1件ずつ await していたため、
+        // announcements の create が BM/AM のみ許可（firestore.rules）である店長・スタッフでは
+        // permission-denied を1件ずつ待つ＝申請が保存し終わっているのに
+        // 「送信中…」が数十秒〜数分続き、利用者は失敗と誤解してリロードしていた。
+        // 通らないと分かっている役職ではそもそも呼ばない（無駄な往復と待ちを消す）。
+        const canAnnounce = user?.role === 'BM' || user?.role === 'AM';
+        const deliverShortageAnnouncements = async () => {
             const updatedDates = new Set<string>();
             savedKeys.forEach(k => updatedDates.add(k.dateStr));
 
@@ -500,10 +569,22 @@ export const StaffShiftRequest = () => {
                     }
                 }
             }
+        };
+        // 送信ボタンを掴み続けないよう、待たずに投げる（catch は必ず付けて未処理拒否を残さない）
+        if (canAnnounce) {
+            void deliverShortageAnnouncements().catch(e => console.warn('稼働不足のお知らせ処理でエラー', e));
+        }
         } catch (e) {
-            console.warn('稼働不足のお知らせ処理でエラー', e);
+            // ここに来るのは保存ループより前後の想定外エラー（店舗・スタッフ参照、再取得など）。
+            // 従来はこの経路が無く、例外が出ると isSubmitting が true のまま残って
+            // 確定ボタンが「送信中…」で永久に無効になり、リロードするしかなかった。
+            console.error('申請の送信処理でエラー', e);
+            setStatusMessage({ type: 'error', text: '申請を保存できませんでした。通信状況を確認して、もう一度お試しください。' });
         } finally {
+            // どの経路を通っても必ずボタンを戻す
+            window.removeEventListener('offline', handleOffline);
             setIsSubmitting(false);
+            setSubmitProgress(null);
         }
     };
 
